@@ -1,0 +1,34 @@
+{
+ "cards": [
+  {
+   "card": "Total Expenses This Month"
+  },
+  {
+   "card": "Total Expenses This Year"
+  }
+ ],
+ "charts": [
+  {
+   "chart": "Monthly Expense Trend",
+   "width": "Full"
+  },
+  {
+   "chart": "Expenses by Type",
+   "width": "Half"
+  },
+  {
+   "chart": "Expenses by Cost Center",
+   "width": "Half"
+  }
+ ],
+ "creation": "2025-12-17 16:30:00.000000",
+ "dashboard_name": "Expenses Dashboard",
+ "docstatus": 0,
+ "doctype": "Dashboard",
+ "idx": 0,
+ "is_default": 0,
+ "is_standard": 1,
+ "module": "Expenses Management",
+ "name": "Expenses Dashboard",
+ "owner": "Administrator"
+}

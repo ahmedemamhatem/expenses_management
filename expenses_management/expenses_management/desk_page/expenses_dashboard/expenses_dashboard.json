@@ -1,0 +1,28 @@
+{
+ "cards": [
+  {
+   "card": "Total Expenses This Month"
+  },
+  {
+   "card": "Total Expenses This Year"
+  }
+ ],
+ "charts": [],
+ "creation": "2025-12-17 16:30:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Desk Page",
+ "extends": "",
+ "extends_another_page": 0,
+ "idx": 0,
+ "is_standard": 1,
+ "label": "Expenses Dashboard",
+ "modified": "2025-12-17 16:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Expenses Management",
+ "name": "Expenses Dashboard",
+ "owner": "Administrator",
+ "pin_to_bottom": 0,
+ "pin_to_top": 0,
+ "restrict_to_domain": ""
+}

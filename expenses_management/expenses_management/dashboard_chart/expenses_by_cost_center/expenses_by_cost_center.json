@@ -1,0 +1,23 @@
+{
+ "chart_name": "Expenses by Cost Center",
+ "chart_type": "Bar",
+ "creation": "2025-12-17 16:30:00.000000",
+ "docstatus": 0,
+ "doctype": "Dashboard Chart",
+ "document_type": "Expense Entry",
+ "dynamic_filters_json": "{\"company\":\"frappe.defaults.get_user_default(\\\"Company\\\")\"}",
+ "filters_json": "[[\"Expense Entry\",\"docstatus\",\"=\",1,false]]",
+ "group_by_based_on": "cost_center",
+ "group_by_type": "Sum",
+ "is_public": 1,
+ "module": "Expenses Management",
+ "name": "Expenses by Cost Center",
+ "number_of_groups": 0,
+ "owner": "Administrator",
+ "time_interval": "Monthly",
+ "timeseries": 0,
+ "type": "Group By",
+ "use_report_chart": 0,
+ "value_based_on": "total_amount",
+ "y_axis": []
+}

@@ -1,0 +1,23 @@
+{
+ "chart_name": "Monthly Expense Trend",
+ "chart_type": "Line",
+ "creation": "2025-12-17 16:30:00.000000",
+ "docstatus": 0,
+ "doctype": "Dashboard Chart",
+ "document_type": "Expense Entry",
+ "dynamic_filters_json": "{\"company\":\"frappe.defaults.get_user_default(\\\"Company\\\")\"}",
+ "filters_json": "[[\"Expense Entry\",\"docstatus\",\"=\",1,false]]",
+ "is_public": 1,
+ "module": "Expenses Management",
+ "name": "Monthly Expense Trend",
+ "number_of_groups": 0,
+ "owner": "Administrator",
+ "time_interval": "Monthly",
+ "timeseries": 1,
+ "type": "Sum",
+ "use_report_chart": 0,
+ "value_based_on": "total_amount",
+ "based_on": "posting_date",
+ "timespan": "Last Year",
+ "y_axis": []
+}
