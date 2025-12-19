@@ -68,10 +68,10 @@ def get_dashboard_data(
     if prev_total > 0:
         change = ((current_total - prev_total) / prev_total) * 100
 
-    # Get year to date
+    # Get year to date (always use today as end date, not filter to_date)
     year_start = getdate(f"{getdate(today()).year}-01-01")
     ytd_conditions = conditions + [
-        "ee.posting_date BETWEEN %(year_start)s AND %(to_date)s"
+        "ee.posting_date BETWEEN %(year_start)s AND %(today_date)s"
     ]
     ytd_where = " AND ".join(ytd_conditions)
 
@@ -79,7 +79,7 @@ def get_dashboard_data(
         SELECT COALESCE(SUM(ee.total_amount), 0) as total
         FROM `tabExpense Entry` ee
         WHERE {ytd_where}
-    """, {**values, "year_start": year_start, "to_date": to_date})[0][0]
+    """, {**values, "year_start": year_start, "today_date": today()})[0][0]
 
     # Get expenses by type
     item_conditions = ["ee.docstatus = 1"]
