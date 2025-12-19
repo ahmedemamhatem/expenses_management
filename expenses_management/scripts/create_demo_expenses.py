@@ -169,8 +169,14 @@ def create_random_expense(company, expense_types, cost_centers, mode_of_payment,
 
             amount = round(random.uniform(100, 10000), 2)
 
-            # 50% chance to be taxable
-            is_taxable = random.choice([0, 1])
+            # Check if expense type has default tax template
+            expense_type_doc = frappe.get_doc("Expense Type", expense_type)
+            has_tax_template = bool(expense_type_doc.default_tax_template)
+
+            # Only make taxable if expense type has tax template
+            is_taxable = 0
+            if has_tax_template and tax_template:
+                is_taxable = random.choice([0, 1])
 
             item_data = {
                 "expense_type": expense_type,
@@ -179,9 +185,9 @@ def create_random_expense(company, expense_types, cost_centers, mode_of_payment,
                 "taxable": is_taxable
             }
 
-            # Add tax template if taxable and template exists
-            if is_taxable and tax_template:
-                item_data["tax_template"] = tax_template
+            # Add tax template if taxable
+            if is_taxable and has_tax_template:
+                item_data["tax_template"] = expense_type_doc.default_tax_template
 
             expense.append("expense_items", item_data)
 
