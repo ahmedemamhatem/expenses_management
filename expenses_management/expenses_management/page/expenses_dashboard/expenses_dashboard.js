@@ -74,6 +74,10 @@ function render_dashboard(page, data) {
 			.chart-full { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 16px; transition: all 0.3s; }
 			.chart-full:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
 			.chart-full h5 { font-size: 15px; font-weight: 700; color: #212529; margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px; }
+			.charts-row-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+			.chart-card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); transition: all 0.3s; }
+			.chart-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+			.chart-card h5 { font-size: 14px; font-weight: 700; color: #212529; margin: 0 0 14px 0; display: flex; align-items: center; gap: 6px; }
 			.data-table { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 			.expenses-table { width: 100%; border-collapse: separate; border-spacing: 0; }
 			.expenses-table thead th { background: #f8f9fa; color: #495057; font-weight: 700; font-size: 11px; text-align: left; padding: 10px 12px; border-bottom: 2px solid #dee2e6; }
@@ -87,6 +91,7 @@ function render_dashboard(page, data) {
 			.expense-link:hover { color: #364fc7; }
 			@media (max-width: 1200px) {
 				.metrics-grid { grid-template-columns: repeat(2, 1fr); }
+				.charts-row-2 { grid-template-columns: 1fr; }
 			}
 			@media (max-width: 768px) {
 				.metrics-grid { grid-template-columns: 1fr; }
@@ -199,6 +204,17 @@ function render_dashboard(page, data) {
 				<div id="daily-trend-chart"></div>
 			</div>
 
+			<div class="charts-row-2">
+				<div class="chart-card">
+					<h5><i class="fa fa-pie-chart" style="color: #51cf66;"></i> Type Distribution</h5>
+					<div id="expenses-by-type-donut"></div>
+				</div>
+				<div class="chart-card">
+					<h5><i class="fa fa-pie-chart" style="color: #4dabf7;"></i> Tax Breakdown</h5>
+					<div id="tax-donut-chart"></div>
+				</div>
+			</div>
+
 			<div class="data-table">
 				<h5 style="font-size: 15px; font-weight: 700; margin: 0 0 14px 0;">
 					<i class="fa fa-trophy" style="color: #ffa94d;"></i> Top 10 Expenses
@@ -248,6 +264,8 @@ function render_dashboard(page, data) {
 		render_tax_comparison_chart(data.expenses_by_type);
 		render_count_by_type_chart(data.expenses_by_type);
 		render_daily_trend_chart(data.monthly_trend);
+		render_expenses_by_type_donut(data.expenses_by_type);
+		render_tax_donut_chart(data.expenses_by_type);
 	});
 }
 
@@ -445,6 +463,60 @@ function render_daily_trend_chart(data) {
 			height: 300,
 			colors: ['#ff6b6b'],
 			barOptions: { spaceRatio: 0.3 },
+			tooltipOptions: { formatTooltipY: d => format_currency(d) }
+		});
+	} catch (e) {
+		console.error("Error:", e);
+		container.html('<div style="text-align:center;padding:30px;color:#ff6b6b;">Error</div>');
+	}
+}
+
+function render_expenses_by_type_donut(data) {
+	const container = $('#expenses-by-type-donut');
+	if (!data || data.length === 0) {
+		container.html('<div style="text-align:center;padding:30px;color:#868e96;">No data</div>');
+		return;
+	}
+	try {
+		if (chart_instances.expenses_by_type_donut) chart_instances.expenses_by_type_donut = null;
+		var colors = ['#4c6ef5', '#51cf66', '#ffa94d', '#ff6b6b', '#4dabf7', '#a78bfa', '#fcc419', '#ff8787'];
+		const total = data.reduce((sum, d) => sum + d.total, 0);
+		const dataWithPercentage = data.map(d => ({ ...d, percentage: ((d.total / total) * 100).toFixed(1) }));
+		chart_instances.expenses_by_type_donut = new frappe.Chart("#expenses-by-type-donut", {
+			data: {
+				labels: dataWithPercentage.map(d => `${d.expense_type || 'Unspecified'} (${d.percentage}%)`),
+				datasets: [{ values: data.map(d => d.total) }]
+			},
+			type: 'donut',
+			height: 320,
+			colors: colors,
+			maxSlices: 8,
+			tooltipOptions: { formatTooltipY: d => format_currency(d) }
+		});
+	} catch (e) {
+		console.error("Error:", e);
+		container.html('<div style="text-align:center;padding:30px;color:#ff6b6b;">Error</div>');
+	}
+}
+
+function render_tax_donut_chart(data) {
+	const container = $('#tax-donut-chart');
+	if (!data || data.length === 0) {
+		container.html('<div style="text-align:center;padding:30px;color:#868e96;">No data</div>');
+		return;
+	}
+	try {
+		if (chart_instances.tax_donut) chart_instances.tax_donut = null;
+		const totalTax = data.reduce((sum, d) => sum + (d.total * 0.15 || 0), 0);
+		const totalNet = data.reduce((sum, d) => sum + d.total, 0) - totalTax;
+		chart_instances.tax_donut = new frappe.Chart("#tax-donut-chart", {
+			data: {
+				labels: ['Net Amount', 'Tax Amount'],
+				datasets: [{ values: [totalNet, totalTax] }]
+			},
+			type: 'donut',
+			height: 320,
+			colors: ['#4dabf7', '#ffa94d'],
 			tooltipOptions: { formatTooltipY: d => format_currency(d) }
 		});
 	} catch (e) {
