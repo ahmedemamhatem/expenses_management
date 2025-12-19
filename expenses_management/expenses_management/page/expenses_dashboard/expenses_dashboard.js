@@ -133,59 +133,111 @@ function render_dashboard(page, data) {
 				margin-bottom: 30px;
 			}
 
-			/* Metric Cards - Ultra Compact Design */
+			/* Metric Cards - Advanced Design with Gradients */
 			.metric-card {
-				background: white;
+				background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
 				border: 1px solid #e9ecef;
-				border-radius: 8px;
-				padding: 14px 16px;
+				border-radius: 12px;
+				padding: 20px 24px;
 				margin-bottom: 16px;
-				transition: all 0.2s ease;
+				transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 				height: 100%;
+				position: relative;
+				overflow: hidden;
+				box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+			}
+
+			.metric-card::before {
+				content: '';
+				position: absolute;
+				top: 0;
+				left: 0;
+				right: 0;
+				height: 4px;
+				background: linear-gradient(90deg, #4c6ef5, #51cf66);
+				opacity: 0;
+				transition: opacity 0.3s ease;
 			}
 
 			.metric-card:hover {
-				border-color: #dee2e6;
-				box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+				transform: translateY(-4px);
+				box-shadow: 0 12px 24px rgba(0,0,0,0.12);
+			}
+
+			.metric-card:hover::before {
+				opacity: 1;
+			}
+
+			.metric-card .metric-icon {
+				position: absolute;
+				top: 20px;
+				right: 20px;
+				font-size: 32px;
+				opacity: 0.15;
+				transition: all 0.3s ease;
+			}
+
+			.metric-card:hover .metric-icon {
+				opacity: 0.25;
+				transform: scale(1.1);
 			}
 
 			.metric-card .metric-label {
-				font-size: 11px;
+				font-size: 12px;
 				color: #868e96;
-				font-weight: 500;
-				margin-bottom: 6px;
+				font-weight: 600;
+				margin-bottom: 8px;
 				display: block;
 				text-transform: uppercase;
-				letter-spacing: 0.3px;
+				letter-spacing: 0.5px;
 			}
 
 			.metric-card .metric-value {
-				font-size: 22px;
-				font-weight: 700;
+				font-size: 28px;
+				font-weight: 800;
 				color: #212529;
-				margin-bottom: 4px;
+				margin-bottom: 8px;
 				line-height: 1;
+				position: relative;
+				z-index: 1;
 			}
 
 			.metric-card .metric-info {
-				font-size: 11px;
+				font-size: 12px;
 				color: #adb5bd;
+				font-weight: 500;
 			}
 
 			.metric-card.primary {
-				border-left: 3px solid #4c6ef5;
+				border-left: 4px solid #4c6ef5;
+			}
+
+			.metric-card.primary .metric-icon {
+				color: #4c6ef5;
 			}
 
 			.metric-card.success {
-				border-left: 3px solid #51cf66;
+				border-left: 4px solid #51cf66;
+			}
+
+			.metric-card.success .metric-icon {
+				color: #51cf66;
 			}
 
 			.metric-card.warning {
-				border-left: 3px solid #ffa94d;
+				border-left: 4px solid #ffa94d;
+			}
+
+			.metric-card.warning .metric-icon {
+				color: #ffa94d;
 			}
 
 			.metric-card.info {
-				border-left: 3px solid #4dabf7;
+				border-left: 4px solid #4dabf7;
+			}
+
+			.metric-card.info .metric-icon {
+				color: #4dabf7;
 			}
 
 			.metric-change {
@@ -208,25 +260,52 @@ function render_dashboard(page, data) {
 				color: #c92a2a;
 			}
 
-			/* Chart Cards */
+			/* Chart Cards - Enhanced Design */
 			.chart-card {
-				background: white;
+				background: linear-gradient(135deg, #ffffff 0%, #fafbfc 100%);
 				border: 1px solid #e9ecef;
-				border-radius: 10px;
-				padding: 24px;
+				border-radius: 16px;
+				padding: 28px;
 				margin-bottom: 24px;
+				box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+				transition: all 0.3s ease;
+				position: relative;
+				overflow: hidden;
+			}
+
+			.chart-card::before {
+				content: '';
+				position: absolute;
+				top: 0;
+				left: 0;
+				right: 0;
+				height: 3px;
+				background: linear-gradient(90deg, #4c6ef5, #51cf66, #ffa94d, #ff6b6b);
+				opacity: 0;
+				transition: opacity 0.3s ease;
+			}
+
+			.chart-card:hover {
+				box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+			}
+
+			.chart-card:hover::before {
+				opacity: 1;
 			}
 
 			.chart-card h5 {
-				font-size: 16px;
-				font-weight: 600;
+				font-size: 18px;
+				font-weight: 700;
 				color: #212529;
-				margin-bottom: 20px;
-				padding-bottom: 12px;
+				margin-bottom: 24px;
+				padding-bottom: 16px;
 				border-bottom: 2px solid #f1f3f5;
+				display: flex;
+				align-items: center;
+				gap: 8px;
 			}
 
-			/* Custom bar chart styles */
+			/* Custom bar chart styles - Enhanced */
 			.custom-bar-chart {
 				padding: 20px 10px;
 			}
@@ -234,9 +313,31 @@ function render_dashboard(page, data) {
 			.custom-bar-chart .bar-group {
 				display: inline-block;
 				text-align: center;
-				margin: 0 8px;
+				margin: 0 10px;
 				vertical-align: bottom;
+				animation: fadeInUp 0.6s ease forwards;
+				opacity: 0;
 			}
+
+			@keyframes fadeInUp {
+				from {
+					opacity: 0;
+					transform: translateY(20px);
+				}
+				to {
+					opacity: 1;
+					transform: translateY(0);
+				}
+			}
+
+			.custom-bar-chart .bar-group:nth-child(1) { animation-delay: 0.1s; }
+			.custom-bar-chart .bar-group:nth-child(2) { animation-delay: 0.2s; }
+			.custom-bar-chart .bar-group:nth-child(3) { animation-delay: 0.3s; }
+			.custom-bar-chart .bar-group:nth-child(4) { animation-delay: 0.4s; }
+			.custom-bar-chart .bar-group:nth-child(5) { animation-delay: 0.5s; }
+			.custom-bar-chart .bar-group:nth-child(6) { animation-delay: 0.6s; }
+			.custom-bar-chart .bar-group:nth-child(7) { animation-delay: 0.7s; }
+			.custom-bar-chart .bar-group:nth-child(8) { animation-delay: 0.8s; }
 
 			.custom-bar-chart .bar-wrapper {
 				position: relative;
@@ -244,44 +345,71 @@ function render_dashboard(page, data) {
 			}
 
 			.custom-bar-chart .bar {
-				width: 45px;
+				width: 50px;
 				background: linear-gradient(180deg, #51cf66 0%, #40c057 100%);
-				border-radius: 4px 4px 0 0;
-				transition: all 0.3s ease;
+				border-radius: 8px 8px 0 0;
+				transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 				position: relative;
 				display: inline-block;
+				box-shadow: 0 4px 12px rgba(81, 207, 102, 0.3);
+				cursor: pointer;
 			}
 
 			.custom-bar-chart .bar:hover {
-				opacity: 0.8;
-				transform: translateY(-3px);
+				transform: translateY(-6px) scale(1.05);
+				box-shadow: 0 8px 20px rgba(81, 207, 102, 0.5);
+			}
+
+			.custom-bar-chart .bar::before {
+				content: '';
+				position: absolute;
+				top: 0;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				background: linear-gradient(180deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 100%);
+				border-radius: 8px 8px 0 0;
 			}
 
 			.custom-bar-chart .bar-value {
 				position: absolute;
-				top: -25px;
+				top: -30px;
 				left: 50%;
 				transform: translateX(-50%);
-				font-size: 11px;
-				font-weight: 600;
+				font-size: 12px;
+				font-weight: 700;
 				color: #495057;
 				white-space: nowrap;
+				background: rgba(255, 255, 255, 0.95);
+				padding: 4px 8px;
+				border-radius: 6px;
+				box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 			}
 
 			.custom-bar-chart .bar-label {
-				margin-top: 8px;
+				margin-top: 12px;
 				font-size: 12px;
 				color: #495057;
-				font-weight: 500;
-				max-width: 80px;
+				font-weight: 600;
+				max-width: 90px;
 				word-wrap: break-word;
 				line-height: 1.4;
-				min-height: 35px;
+				min-height: 40px;
 			}
 
 			.custom-bar-chart .chart-axis {
-				border-top: 2px solid #dee2e6;
+				border-top: 3px solid #dee2e6;
 				margin-top: 10px;
+				position: relative;
+			}
+
+			.custom-bar-chart .chart-axis::before {
+				content: '0';
+				position: absolute;
+				left: 0;
+				bottom: 5px;
+				font-size: 10px;
+				color: #adb5bd;
 			}
 
 			/* Row spacing */
@@ -324,58 +452,92 @@ function render_dashboard(page, data) {
 				outline: none;
 			}
 
-			/* Table Styles */
+			/* Table Styles - Enhanced */
 			.expenses-table {
 				width: 100%;
-				border-collapse: collapse;
+				border-collapse: separate;
+				border-spacing: 0;
 			}
 
 			.expenses-table thead th {
-				background: #f8f9fa;
+				background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 				color: #495057;
-				font-weight: 600;
+				font-weight: 700;
 				font-size: 13px;
 				text-align: left;
-				padding: 14px 16px;
-				border-bottom: 2px solid #dee2e6;
+				padding: 16px 20px;
+				border-bottom: 3px solid #dee2e6;
+				position: sticky;
+				top: 0;
+				z-index: 10;
+			}
+
+			.expenses-table thead th:first-child {
+				border-radius: 8px 0 0 0;
+			}
+
+			.expenses-table thead th:last-child {
+				border-radius: 0 8px 0 0;
 			}
 
 			.expenses-table tbody td {
-				padding: 14px 16px;
+				padding: 16px 20px;
 				border-bottom: 1px solid #e9ecef;
 				font-size: 14px;
 				color: #212529;
 			}
 
 			.expenses-table tbody tr {
-				transition: background 0.15s ease;
+				transition: all 0.2s ease;
+				background: white;
 			}
 
 			.expenses-table tbody tr:hover {
-				background: #f8f9fa;
+				background: linear-gradient(90deg, #f8f9fa 0%, #ffffff 100%);
+				transform: scale(1.01);
+				box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+			}
+
+			.expenses-table tbody tr:last-child td:first-child {
+				border-radius: 0 0 0 8px;
+			}
+
+			.expenses-table tbody tr:last-child td:last-child {
+				border-radius: 0 0 8px 0;
 			}
 
 			.expense-link {
 				color: #4c6ef5;
-				font-weight: 500;
+				font-weight: 600;
 				text-decoration: none;
-				transition: color 0.15s ease;
+				transition: all 0.2s ease;
+				display: inline-flex;
+				align-items: center;
+				gap: 6px;
 			}
 
 			.expense-link:hover {
 				color: #364fc7;
-				text-decoration: underline;
+				text-decoration: none;
+				transform: translateX(4px);
 			}
 
-			/* Badge Styles */
+			/* Badge Styles - Enhanced */
 			.amount-badge {
-				background: #e7f5ff;
+				background: linear-gradient(135deg, #e7f5ff 0%, #d0ebff 100%);
 				color: #1864ab;
-				padding: 4px 12px;
-				border-radius: 4px;
-				font-weight: 600;
+				padding: 6px 14px;
+				border-radius: 8px;
+				font-weight: 700;
 				font-size: 13px;
 				display: inline-block;
+				box-shadow: 0 2px 6px rgba(24, 100, 171, 0.15);
+				transition: all 0.2s ease;
+			}
+
+			.amount-badge:hover {
+				transform: scale(1.05);
+				box-shadow: 0 4px 12px rgba(24, 100, 171, 0.25);
 			}
 
 			/* Responsive */
@@ -406,15 +568,36 @@ function render_dashboard(page, data) {
 			}
 
 			.chart-loading i {
-				font-size: 24px;
+				font-size: 32px;
 				margin-bottom: 12px;
 				opacity: 0.4;
+				animation: pulse 1.5s ease-in-out infinite;
+			}
+
+			@keyframes pulse {
+				0%, 100% { opacity: 0.4; transform: scale(1); }
+				50% { opacity: 0.6; transform: scale(1.05); }
 			}
 
 			.chart-loading p {
 				font-size: 14px;
 				color: #6a737d;
 				margin: 0;
+			}
+
+			/* Chart container fade in */
+			#monthly-trend-chart,
+			#expenses-by-type-chart,
+			#expenses-by-cost-center-chart,
+			#expenses-by-company-chart,
+			#tax-comparison-chart,
+			#count-by-type-chart {
+				animation: fadeIn 0.8s ease;
+			}
+
+			@keyframes fadeIn {
+				from { opacity: 0; transform: translateY(10px); }
+				to { opacity: 1; transform: translateY(0); }
 			}
 		</style>
 
@@ -483,6 +666,7 @@ function render_dashboard(page, data) {
 			<div class="row">
 				<div class="col-sm-3">
 					<div class="metric-card primary">
+						<i class="fa fa-money metric-icon"></i>
 						<div class="metric-label">Total Expenses</div>
 						<div class="metric-value">${format_currency(data.current_period.total)}</div>
 						<div class="metric-change ${data.current_period.change >= 0 ? 'positive' : 'negative'}">
@@ -493,6 +677,7 @@ function render_dashboard(page, data) {
 				</div>
 				<div class="col-sm-3">
 					<div class="metric-card success">
+						<i class="fa fa-calendar-check-o metric-icon"></i>
 						<div class="metric-label">Year to Date</div>
 						<div class="metric-value">${format_currency(data.year_to_date.total)}</div>
 						<div class="metric-info">${new Date().getFullYear()} total expenses</div>
@@ -500,6 +685,7 @@ function render_dashboard(page, data) {
 				</div>
 				<div class="col-sm-3">
 					<div class="metric-card info">
+						<i class="fa fa-file-text-o metric-icon"></i>
 						<div class="metric-label">Total Entries</div>
 						<div class="metric-value">${data.stats.count}</div>
 						<div class="metric-info">Expense entries logged</div>
@@ -507,6 +693,7 @@ function render_dashboard(page, data) {
 				</div>
 				<div class="col-sm-3">
 					<div class="metric-card warning">
+						<i class="fa fa-calculator metric-icon"></i>
 						<div class="metric-label">Average Amount</div>
 						<div class="metric-value">${format_currency(data.stats.average)}</div>
 						<div class="metric-info">Per expense entry</div>
@@ -518,6 +705,7 @@ function render_dashboard(page, data) {
 			<div class="row">
 				<div class="col-sm-3">
 					<div class="metric-card info">
+						<i class="fa fa-percent metric-icon"></i>
 						<div class="metric-label">Total Tax</div>
 						<div class="metric-value">${format_currency(data.stats.total_tax || 0)}</div>
 						<div class="metric-info">Tax amount collected</div>
@@ -525,6 +713,7 @@ function render_dashboard(page, data) {
 				</div>
 				<div class="col-sm-3">
 					<div class="metric-card primary">
+						<i class="fa fa-arrow-circle-up metric-icon"></i>
 						<div class="metric-label">Highest Entry</div>
 						<div class="metric-value">${format_currency(data.top_expenses && data.top_expenses.length > 0 ? data.top_expenses[0].total_amount : 0)}</div>
 						<div class="metric-info">Maximum single expense</div>
@@ -532,6 +721,7 @@ function render_dashboard(page, data) {
 				</div>
 				<div class="col-sm-3">
 					<div class="metric-card success">
+						<i class="fa fa-tags metric-icon"></i>
 						<div class="metric-label">Categories</div>
 						<div class="metric-value">${data.expenses_by_type ? data.expenses_by_type.length : 0}</div>
 						<div class="metric-info">Expense types tracked</div>
@@ -539,6 +729,7 @@ function render_dashboard(page, data) {
 				</div>
 				<div class="col-sm-3">
 					<div class="metric-card warning">
+						<i class="fa fa-sitemap metric-icon"></i>
 						<div class="metric-label">Cost Centers</div>
 						<div class="metric-value">${data.expenses_by_cost_center ? data.expenses_by_cost_center.length : 0}</div>
 						<div class="metric-info">Active cost centers</div>
@@ -551,7 +742,7 @@ function render_dashboard(page, data) {
 				<div class="row">
 					<div class="col-sm-12">
 						<div class="chart-card">
-							<h5>📊 Expenses by Company</h5>
+							<h5><i class="fa fa-building" style="color: #4c6ef5;"></i> Expenses by Company</h5>
 							<div id="expenses-by-company-chart"></div>
 						</div>
 					</div>
@@ -561,7 +752,7 @@ function render_dashboard(page, data) {
 				<div class="row">
 					<div class="col-sm-12">
 						<div class="chart-card">
-							<h5>💼 Company Breakdown</h5>
+							<h5><i class="fa fa-table" style="color: #51cf66;"></i> Company Breakdown</h5>
 							<div class="table-responsive">
 								<table class="expenses-table">
 									<thead>
@@ -595,7 +786,7 @@ function render_dashboard(page, data) {
 			<div class="row">
 				<div class="col-sm-12">
 					<div class="chart-card">
-						<h5>Monthly Expense Trend</h5>
+						<h5><i class="fa fa-line-chart" style="color: #4c6ef5;"></i> Monthly Expense Trend</h5>
 						<div id="monthly-trend-chart"></div>
 					</div>
 				</div>
@@ -605,13 +796,13 @@ function render_dashboard(page, data) {
 			<div class="row">
 				<div class="col-sm-6">
 					<div class="chart-card">
-						<h5>Expenses by Type</h5>
+						<h5><i class="fa fa-pie-chart" style="color: #51cf66;"></i> Expenses by Type</h5>
 						<div id="expenses-by-type-chart"></div>
 					</div>
 				</div>
 				<div class="col-sm-6">
 					<div class="chart-card">
-						<h5>Expenses by Cost Center</h5>
+						<h5><i class="fa fa-bar-chart" style="color: #ffa94d;"></i> Expenses by Cost Center</h5>
 						<div id="expenses-by-cost-center-chart"></div>
 					</div>
 				</div>
@@ -621,13 +812,13 @@ function render_dashboard(page, data) {
 			<div class="row">
 				<div class="col-sm-6">
 					<div class="chart-card">
-						<h5>Tax vs Net Amount</h5>
+						<h5><i class="fa fa-balance-scale" style="color: #4dabf7;"></i> Tax vs Net Amount</h5>
 						<div id="tax-comparison-chart"></div>
 					</div>
 				</div>
 				<div class="col-sm-6">
 					<div class="chart-card">
-						<h5>Expense Count by Type</h5>
+						<h5><i class="fa fa-list-ol" style="color: #a78bfa;"></i> Expense Count by Type</h5>
 						<div id="count-by-type-chart"></div>
 					</div>
 				</div>
@@ -637,7 +828,7 @@ function render_dashboard(page, data) {
 			<div class="row">
 				<div class="col-sm-12">
 					<div class="chart-card">
-						<h5>Top 10 Expenses</h5>
+						<h5><i class="fa fa-trophy" style="color: #ffa94d;"></i> Top 10 Expenses</h5>
 						<div class="table-responsive">
 							<table class="expenses-table">
 								<thead>
@@ -753,13 +944,13 @@ function render_monthly_trend_chart(data) {
 				]
 			},
 			type: 'axis-mixed',
-			height: 350,
+			height: 380,
 			colors: ['#4c6ef5', '#ff6b6b'],
 			lineOptions: {
 				regionFill: 1,
 				hideDots: 0,
 				heatline: 0,
-				dotSize: 5,
+				dotSize: 6,
 				spline: 1
 			},
 			axisOptions: {
@@ -768,7 +959,8 @@ function render_monthly_trend_chart(data) {
 			},
 			tooltipOptions: {
 				formatTooltipY: d => format_currency(d)
-			}
+			},
+			valuesOverPoints: 0
 		});
 	} catch (e) {
 		console.error("Error rendering monthly trend chart:", e);
@@ -812,14 +1004,16 @@ function render_expenses_by_company_chart(data) {
 				}]
 			},
 			type: 'bar',
-			height: 350,
+			height: 380,
 			colors: colors,
 			barOptions: {
-				spaceRatio: 0.5
+				spaceRatio: 0.4
 			},
 			tooltipOptions: {
 				formatTooltipY: d => format_currency(d)
-			}
+			},
+			animate: 1,
+			truncateLegends: 1
 		});
 	} catch (e) {
 		console.error("Error rendering expenses by company chart:", e);
@@ -862,13 +1056,14 @@ function render_expenses_by_type_chart(data) {
 					values: data.map(d => d.total)
 				}]
 			},
-			type: 'percentage',
-			height: 350,
+			type: 'donut',
+			height: 380,
 			colors: colors,
 			maxSlices: 10,
 			tooltipOptions: {
 				formatTooltipY: d => format_currency(d)
-			}
+			},
+			animate: 1
 		});
 	} catch (e) {
 		console.error("Error rendering expenses by type chart:", e);
@@ -893,16 +1088,30 @@ function render_expenses_by_cost_center_chart(data) {
 		// Create custom bar chart HTML
 		let chartHtml = '<div class="custom-bar-chart" style="text-align: center;">';
 
-		sortedData.forEach((d) => {
+		const gradients = [
+			'linear-gradient(180deg, #4c6ef5 0%, #364fc7 100%)',
+			'linear-gradient(180deg, #51cf66 0%, #40c057 100%)',
+			'linear-gradient(180deg, #ffa94d 0%, #fd7e14 100%)',
+			'linear-gradient(180deg, #ff6b6b 0%, #fa5252 100%)',
+			'linear-gradient(180deg, #4dabf7 0%, #339af0 100%)',
+			'linear-gradient(180deg, #a78bfa 0%, #9368e8 100%)',
+			'linear-gradient(180deg, #fcc419 0%, #fab005 100%)',
+			'linear-gradient(180deg, #ff8787 0%, #ff6b6b 100%)',
+			'linear-gradient(180deg, #69db7c 0%, #51cf66 100%)',
+			'linear-gradient(180deg, #74c0fc 0%, #4dabf7 100%)'
+		];
+
+		sortedData.forEach((d, index) => {
 			const label = d.cost_center || 'Unspecified';
 			const percentage = ((d.total / totalAmount) * 100).toFixed(1);
 			const barHeight = Math.max((d.total / maxValue) * 250, 10); // Min height 10px, max 250px
+			const gradient = gradients[index % gradients.length];
 
 			chartHtml += `
 				<div class="bar-group">
 					<div class="bar-wrapper">
 						<div class="bar-value">${percentage}%</div>
-						<div class="bar" style="height: ${barHeight}px; background: linear-gradient(180deg, #51cf66 0%, #40c057 100%);"
+						<div class="bar" style="height: ${barHeight}px; background: ${gradient};"
 							 title="${label}: ${format_currency(d.total)} (${percentage}%)"></div>
 					</div>
 					<div class="bar-label" title="${label}">${label}</div>
@@ -938,12 +1147,13 @@ function render_tax_comparison_chart(data) {
 					values: [totalNet, totalTax]
 				}]
 			},
-			type: 'pie',
-			height: 300,
+			type: 'donut',
+			height: 350,
 			colors: ['#4dabf7', '#ffa94d'],
 			tooltipOptions: {
 				formatTooltipY: d => format_currency(d)
-			}
+			},
+			animate: 1
 		});
 	} catch (e) {
 		console.error("Error rendering tax comparison chart:", e);
@@ -968,17 +1178,29 @@ function render_count_by_type_chart(data) {
 		// Create custom bar chart HTML
 		let chartHtml = '<div class="custom-bar-chart" style="text-align: center;">';
 
-		sortedData.forEach((d) => {
+		const countGradients = [
+			'linear-gradient(180deg, #a78bfa 0%, #9368e8 100%)',
+			'linear-gradient(180deg, #4dabf7 0%, #339af0 100%)',
+			'linear-gradient(180deg, #fcc419 0%, #fab005 100%)',
+			'linear-gradient(180deg, #ff6b6b 0%, #fa5252 100%)',
+			'linear-gradient(180deg, #51cf66 0%, #40c057 100%)',
+			'linear-gradient(180deg, #4c6ef5 0%, #364fc7 100%)',
+			'linear-gradient(180deg, #ffa94d 0%, #fd7e14 100%)',
+			'linear-gradient(180deg, #ff8787 0%, #ff6b6b 100%)'
+		];
+
+		sortedData.forEach((d, index) => {
 			const label = d.expense_type || 'Unspecified';
 			const count = d.count || 0;
 			const percentage = ((count / totalCount) * 100).toFixed(1);
 			const barHeight = Math.max((count / maxCount) * 250, 10); // Min height 10px, max 250px
+			const gradient = countGradients[index % countGradients.length];
 
 			chartHtml += `
 				<div class="bar-group">
 					<div class="bar-wrapper">
 						<div class="bar-value">${count} (${percentage}%)</div>
-						<div class="bar" style="height: ${barHeight}px; background: linear-gradient(180deg, #a78bfa 0%, #9368e8 100%);"
+						<div class="bar" style="height: ${barHeight}px; background: ${gradient};"
 							 title="${label}: ${count} entries (${percentage}%)"></div>
 					</div>
 					<div class="bar-label" title="${label}">${label}</div>
