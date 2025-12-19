@@ -74,11 +74,6 @@ function render_dashboard(page, data) {
 			.chart-full { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 16px; transition: all 0.3s; }
 			.chart-full:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
 			.chart-full h5 { font-size: 15px; font-weight: 700; color: #212529; margin: 0 0 16px 0; display: flex; align-items: center; gap: 8px; }
-			.charts-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
-			.chart-card { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); transition: all 0.3s; }
-			.chart-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
-			.chart-card h5 { font-size: 14px; font-weight: 700; color: #212529; margin: 0 0 14px 0; display: flex; align-items: center; gap: 6px; }
-			.charts-row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
 			.data-table { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 			.expenses-table { width: 100%; border-collapse: separate; border-spacing: 0; }
 			.expenses-table thead th { background: #f8f9fa; color: #495057; font-weight: 700; font-size: 11px; text-align: left; padding: 10px 12px; border-bottom: 2px solid #dee2e6; }
@@ -92,8 +87,6 @@ function render_dashboard(page, data) {
 			.expense-link:hover { color: #364fc7; }
 			@media (max-width: 1200px) {
 				.metrics-grid { grid-template-columns: repeat(2, 1fr); }
-				.charts-row { grid-template-columns: 1fr; }
-				.charts-row-3 { grid-template-columns: 1fr; }
 			}
 			@media (max-width: 768px) {
 				.metrics-grid { grid-template-columns: 1fr; }
@@ -181,30 +174,29 @@ function render_dashboard(page, data) {
 				<div id="monthly-trend-chart"></div>
 			</div>
 
-			<div class="charts-row">
-				<div class="chart-card">
-					<h5><i class="fa fa-pie-chart" style="color: #51cf66;"></i> Expenses by Type</h5>
-					<div id="expenses-by-type-chart"></div>
-				</div>
-				<div class="chart-card">
-					<h5><i class="fa fa-bar-chart" style="color: #ffa94d;"></i> Expenses by Cost Center</h5>
-					<div id="expenses-by-cost-center-chart"></div>
-				</div>
+			<div class="chart-full">
+				<h5><i class="fa fa-pie-chart" style="color: #51cf66;"></i> Expenses by Type</h5>
+				<div id="expenses-by-type-chart"></div>
 			</div>
 
-			<div class="charts-row-3">
-				<div class="chart-card">
-					<h5><i class="fa fa-balance-scale" style="color: #4dabf7;"></i> Tax vs Net</h5>
-					<div id="tax-comparison-chart"></div>
-				</div>
-				<div class="chart-card">
-					<h5><i class="fa fa-list-ol" style="color: #a78bfa;"></i> Entry Count</h5>
-					<div id="count-by-type-chart"></div>
-				</div>
-				<div class="chart-card">
-					<h5><i class="fa fa-calendar" style="color: #ff6b6b;"></i> Daily Trend</h5>
-					<div id="daily-trend-chart"></div>
-				</div>
+			<div class="chart-full">
+				<h5><i class="fa fa-bar-chart" style="color: #ffa94d;"></i> Expenses by Cost Center</h5>
+				<div id="expenses-by-cost-center-chart"></div>
+			</div>
+
+			<div class="chart-full">
+				<h5><i class="fa fa-balance-scale" style="color: #4dabf7;"></i> Tax vs Net Amount</h5>
+				<div id="tax-comparison-chart"></div>
+			</div>
+
+			<div class="chart-full">
+				<h5><i class="fa fa-list-ol" style="color: #a78bfa;"></i> Entry Count by Type</h5>
+				<div id="count-by-type-chart"></div>
+			</div>
+
+			<div class="chart-full">
+				<h5><i class="fa fa-calendar" style="color: #ff6b6b;"></i> Daily Expense Trend</h5>
+				<div id="daily-trend-chart"></div>
 			</div>
 
 			<div class="data-table">
@@ -342,12 +334,12 @@ function render_expenses_by_type_chart(data) {
 		chart_instances.expenses_by_type = new frappe.Chart("#expenses-by-type-chart", {
 			data: {
 				labels: dataWithPercentage.map(d => `${d.expense_type || 'Unspecified'} (${d.percentage}%)`),
-				datasets: [{ values: data.map(d => d.total) }]
+				datasets: [{ name: "Amount", values: data.map(d => d.total) }]
 			},
-			type: 'donut',
-			height: 280,
+			type: 'bar',
+			height: 350,
 			colors: colors,
-			maxSlices: 8,
+			barOptions: { spaceRatio: 0.3 },
 			tooltipOptions: { formatTooltipY: d => format_currency(d) }
 		});
 	} catch (e) {
@@ -373,9 +365,9 @@ function render_expenses_by_cost_center_chart(data) {
 				datasets: [{ name: "Expenses", values: sortedData.map(d => d.total) }]
 			},
 			type: 'bar',
-			height: 280,
+			height: 350,
 			colors: colors,
-			barOptions: { spaceRatio: 0.2 },
+			barOptions: { spaceRatio: 0.3 },
 			tooltipOptions: { formatTooltipY: d => format_currency(d) }
 		});
 	} catch (e) {
@@ -395,12 +387,13 @@ function render_tax_comparison_chart(data) {
 		const totalNet = data.reduce((sum, d) => sum + d.total, 0) - totalTax;
 		chart_instances.tax_comparison = new frappe.Chart("#tax-comparison-chart", {
 			data: {
-				labels: ['Net', 'Tax'],
-				datasets: [{ values: [totalNet, totalTax] }]
+				labels: ['Net Amount', 'Tax Amount'],
+				datasets: [{ name: "Amount", values: [totalNet, totalTax] }]
 			},
-			type: 'donut',
-			height: 250,
+			type: 'bar',
+			height: 300,
 			colors: ['#4dabf7', '#ffa94d'],
+			barOptions: { spaceRatio: 0.5 },
 			tooltipOptions: { formatTooltipY: d => format_currency(d) }
 		});
 	} catch (e) {
@@ -424,9 +417,9 @@ function render_count_by_type_chart(data) {
 				datasets: [{ name: "Count", values: sortedData.map(d => d.count || 0) }]
 			},
 			type: 'bar',
-			height: 250,
+			height: 300,
 			colors: colors,
-			barOptions: { spaceRatio: 0.2 },
+			barOptions: { spaceRatio: 0.3 },
 			tooltipOptions: { formatTooltipY: d => d + ' entries' }
 		});
 	} catch (e) {
@@ -449,7 +442,7 @@ function render_daily_trend_chart(data) {
 				datasets: [{ name: "Expenses", values: values }]
 			},
 			type: 'bar',
-			height: 250,
+			height: 300,
 			colors: ['#ff6b6b'],
 			barOptions: { spaceRatio: 0.3 },
 			tooltipOptions: { formatTooltipY: d => format_currency(d) }
