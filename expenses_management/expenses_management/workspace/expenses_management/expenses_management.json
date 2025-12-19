@@ -89,7 +89,56 @@
  "modified_by": "Administrator",
  "module": "Expenses Management",
  "name": "Expenses Management",
- "number_cards": [],
+ "number_cards": [
+  {
+   "aggregate_function_based_on": "total_amount",
+   "doctype": "Number Card",
+   "document_type": "Expense Entry",
+   "filters_json": "[[\"Expense Entry\",\"docstatus\",\"=\",1]]",
+   "function": "Sum",
+   "is_public": 1,
+   "label": "Total Expenses",
+   "name": "Total Expenses",
+   "show_percentage_stats": 1,
+   "stats_time_interval": "Monthly"
+  },
+  {
+   "aggregate_function_based_on": "name",
+   "doctype": "Number Card",
+   "document_type": "Expense Entry",
+   "filters_json": "[[\"Expense Entry\",\"docstatus\",\"=\",1]]",
+   "function": "Count",
+   "is_public": 1,
+   "label": "Total Entries",
+   "name": "Total Expense Entries",
+   "show_percentage_stats": 1,
+   "stats_time_interval": "Monthly"
+  },
+  {
+   "aggregate_function_based_on": "total_amount",
+   "doctype": "Number Card",
+   "document_type": "Expense Entry",
+   "filters_json": "[[\"Expense Entry\",\"docstatus\",\"=\",1]]",
+   "function": "Average",
+   "is_public": 1,
+   "label": "Average Expense",
+   "name": "Average Expense Amount",
+   "show_percentage_stats": 0,
+   "stats_time_interval": "Monthly"
+  },
+  {
+   "aggregate_function_based_on": "total_tax_amount",
+   "doctype": "Number Card",
+   "document_type": "Expense Entry",
+   "filters_json": "[[\"Expense Entry\",\"docstatus\",\"=\",1]]",
+   "function": "Sum",
+   "is_public": 1,
+   "label": "Total Tax",
+   "name": "Total Tax Amount",
+   "show_percentage_stats": 1,
+   "stats_time_interval": "Monthly"
+  }
+ ],
  "owner": "Administrator",
  "public": 1,
  "quick_lists": [],
