@@ -1,12 +1,13 @@
 # Expenses Management
 
-A Frappe/ERPNext application for managing expenses and real-time sales invoice tracking.
+A Frappe/ERPNext application for managing expenses with real-time dashboards.
 
 ## Features
 
-- **Expense Management**: Track and manage business expenses with custom types and categories
-- **Real-Time Sales Invoice Dashboard**: Live dashboard displaying sales invoices in Arabic (RTL)
-- **Interactive Dashboards**: Visualize expense data with charts and reports
+- Expense Entry management
+- Real-Time Sales Invoice Dashboard (Arabic RTL)
+- Expense Analytics Dashboard with per-company breakdown
+- Interactive charts and reports
 
 ## Installation
 
@@ -17,10 +18,10 @@ bench --site [site-name] install-app expenses_management
 
 ## Usage
 
-After installation, you can access:
-- Expense Entry forms
-- Sales Invoice Real-time Dashboard
-- Expense Reports and Analytics
+Access the dashboards through:
+- Expenses Management workspace
+- Sales Invoice Real-time page
+- Expenses Dashboard page
 
 ## License
 

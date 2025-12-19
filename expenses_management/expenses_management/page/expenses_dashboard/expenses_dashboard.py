@@ -16,9 +16,6 @@ def get_dashboard_data(
     """Get data for expenses dashboard with filters"""
 
     # Set defaults
-    if not company:
-        company = frappe.defaults.get_user_default("Company")
-
     if not from_date:
         from_date = get_first_day(add_months(today(), -1))
     else:
@@ -30,8 +27,13 @@ def get_dashboard_data(
         to_date = getdate(to_date)
 
     # Build filter conditions
-    conditions = ["ee.docstatus = 1", "ee.company = %(company)s"]
-    values = {"company": company}
+    conditions = ["ee.docstatus = 1"]
+    values = {}
+
+    # Add company filter only if specified and not "All"
+    if company and company != "All":
+        conditions.append("ee.company = %(company)s")
+        values["company"] = company
 
     if cost_center:
         conditions.append("ee.cost_center = %(cost_center)s")
@@ -80,7 +82,9 @@ def get_dashboard_data(
     """, {**values, "year_start": year_start, "to_date": to_date})[0][0]
 
     # Get expenses by type
-    item_conditions = ["ee.docstatus = 1", "ee.company = %(company)s"]
+    item_conditions = ["ee.docstatus = 1"]
+    if company and company != "All":
+        item_conditions.append("ee.company = %(company)s")
     if cost_center:
         item_conditions.append("ee.cost_center = %(cost_center)s")
     if expense_type:
@@ -166,6 +170,22 @@ def get_dashboard_data(
         WHERE {current_where}
     """, {**values, "from_date": from_date, "to_date": to_date}, as_dict=1)[0]
 
+    # Get expenses by company (only when "All" is selected)
+    expenses_by_company = []
+    if not company or company == "All":
+        expenses_by_company = frappe.db.sql(f"""
+            SELECT
+                ee.company,
+                SUM(ee.total_amount) as total,
+                COUNT(ee.name) as count,
+                AVG(ee.total_amount) as average,
+                SUM(ee.total_tax_amount) as total_tax
+            FROM `tabExpense Entry` ee
+            WHERE {current_where}
+            GROUP BY ee.company
+            ORDER BY total DESC
+        """, {**values, "from_date": from_date, "to_date": to_date}, as_dict=1)
+
     return {
         "current_period": {
             "total": flt(current_total, 2),
@@ -183,27 +203,30 @@ def get_dashboard_data(
         },
         "expenses_by_type": expenses_by_type,
         "expenses_by_cost_center": expenses_by_cc,
+        "expenses_by_company": expenses_by_company,
         "monthly_trend": monthly_trend,
-        "top_expenses": top_expenses
+        "top_expenses": top_expenses,
+        "is_all_companies": not company or company == "All"
     }
 
 
 @frappe.whitelist()
 def get_filter_options():
     """Get options for dashboard filters"""
-    company = frappe.defaults.get_user_default("Company")
 
-    companies = frappe.db.get_all("Company", pluck="name")
+    # Get all companies and add "All" option at the beginning
+    companies = ["All"] + frappe.db.get_all("Company", pluck="name")
 
+    # Get all cost centers (not filtered by company)
     cost_centers = frappe.db.get_all(
         "Cost Center",
-        filters={"company": company, "is_group": 0},
+        filters={"is_group": 0},
         pluck="name"
     )
 
+    # Get all expense types (not filtered by company)
     expense_types = frappe.db.get_all(
         "Expense Type",
-        filters={"company": company},
         pluck="name"
     )
 

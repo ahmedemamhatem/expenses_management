@@ -18,6 +18,7 @@ var chart_instances = {
 	monthly_trend: null,
 	expenses_by_type: null,
 	expenses_by_cost_center: null,
+	expenses_by_company: null,
 	tax_comparison: null,
 	count_by_type: null
 };
@@ -69,10 +70,8 @@ function initialize_dashboard(page) {
 		callback: function(r) {
 			if (r.message) {
 				filter_options = r.message;
-				// Set default company if available
-				if (filter_options.companies && filter_options.companies.length > 0) {
-					dashboard_filters.company = filter_options.companies[0];
-				}
+				// Set default company to "All"
+				dashboard_filters.company = "All";
 				// Now load dashboard data
 				load_dashboard_data(page);
 			} else {
@@ -547,6 +546,51 @@ function render_dashboard(page, data) {
 				</div>
 			</div>
 
+			<!-- Company Breakdown Section (Only shown when "All" companies selected) -->
+			${data.is_all_companies && data.expenses_by_company && data.expenses_by_company.length > 0 ? `
+				<div class="row">
+					<div class="col-sm-12">
+						<div class="chart-card">
+							<h5>📊 Expenses by Company</h5>
+							<div id="expenses-by-company-chart"></div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Company Details Table -->
+				<div class="row">
+					<div class="col-sm-12">
+						<div class="chart-card">
+							<h5>💼 Company Breakdown</h5>
+							<div class="table-responsive">
+								<table class="expenses-table">
+									<thead>
+										<tr>
+											<th>Company</th>
+											<th>Total Amount</th>
+											<th>Count</th>
+											<th>Average</th>
+											<th>Total Tax</th>
+										</tr>
+									</thead>
+									<tbody>
+										${data.expenses_by_company.map(comp => `
+											<tr>
+												<td><strong>${comp.company}</strong></td>
+												<td><span class="amount-badge">${format_currency(comp.total)}</span></td>
+												<td>${comp.count}</td>
+												<td>${format_currency(comp.average)}</td>
+												<td>${format_currency(comp.total_tax || 0)}</td>
+											</tr>
+										`).join('')}
+									</tbody>
+								</table>
+							</div>
+						</div>
+					</div>
+				</div>
+			` : ''}
+
 			<!-- Charts Row 1: Monthly Trend (Full Width) -->
 			<div class="row">
 				<div class="col-sm-12">
@@ -649,6 +693,10 @@ function render_dashboard(page, data) {
 
 	// Render charts with requestAnimationFrame for better performance
 	requestAnimationFrame(() => {
+		// Render company chart only if "All" companies selected
+		if (data.is_all_companies && data.expenses_by_company && data.expenses_by_company.length > 0) {
+			render_expenses_by_company_chart(data.expenses_by_company);
+		}
 		render_monthly_trend_chart(data.monthly_trend);
 		render_expenses_by_type_chart(data.expenses_by_type);
 		render_expenses_by_cost_center_chart(data.expenses_by_cost_center);
@@ -724,6 +772,57 @@ function render_monthly_trend_chart(data) {
 		});
 	} catch (e) {
 		console.error("Error rendering monthly trend chart:", e);
+		container.html('<div class="chart-loading"><i class="fa fa-exclamation-triangle text-danger"></i><p>Error rendering chart</p></div>');
+	}
+}
+
+function render_expenses_by_company_chart(data) {
+	const container = $('#expenses-by-company-chart');
+
+	if (!data || data.length === 0) {
+		container.html('<div class="chart-loading"><i class="fa fa-building"></i><p>No company data available</p></div>');
+		return;
+	}
+
+	try {
+		// Destroy previous chart instance
+		if (chart_instances.expenses_by_company) {
+			chart_instances.expenses_by_company = null;
+		}
+
+		// Modern color palette for companies
+		var colors = [
+			'#4c6ef5', '#51cf66', '#ffa94d', '#ff6b6b',
+			'#4dabf7', '#a78bfa', '#fcc419', '#ff8787'
+		];
+
+		// Calculate percentages
+		const totalExpenses = data.reduce((sum, d) => sum + d.total, 0);
+		const dataWithPercentage = data.map(d => ({
+			...d,
+			percentage: ((d.total / totalExpenses) * 100).toFixed(1)
+		}));
+
+		chart_instances.expenses_by_company = new frappe.Chart("#expenses-by-company-chart", {
+			data: {
+				labels: dataWithPercentage.map(d => `${d.company} (${d.percentage}%)`),
+				datasets: [{
+					name: "Total Expenses",
+					values: data.map(d => d.total)
+				}]
+			},
+			type: 'bar',
+			height: 350,
+			colors: colors,
+			barOptions: {
+				spaceRatio: 0.5
+			},
+			tooltipOptions: {
+				formatTooltipY: d => format_currency(d)
+			}
+		});
+	} catch (e) {
+		console.error("Error rendering expenses by company chart:", e);
 		container.html('<div class="chart-loading"><i class="fa fa-exclamation-triangle text-danger"></i><p>Error rendering chart</p></div>');
 	}
 }
