@@ -4,22 +4,9 @@
   "description": "A custom Frappe/ERPNext application for managing company expenses with automatic tax calculations and journal entry creation.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "node build.js",
-    "watch": "node build.js --watch"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
-    "react-frappe-charts": "^4.1.0"
-  },
-  "devDependencies": {
-    "@babel/core": "^7.28.5",
-    "@babel/preset-env": "^7.28.5",
-    "@babel/preset-react": "^7.28.5",
-    "esbuild": "^0.27.2"
-  }
+  "license": "ISC"
 }

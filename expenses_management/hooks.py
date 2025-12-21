@@ -5,6 +5,28 @@ app_description = "Expenses management application"
 app_email = "admin@example.com"
 app_license = "mit"
 
+# Fixtures - Export all custom fields and print formats
+fixtures = [
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["fieldname", "like", "custom_%"]
+        ]
+    },
+    {
+        "dt": "Property Setter",
+        "filters": [
+            ["property_type", "in", ["options", "default", "read_only", "hidden", "reqd"]]
+        ]
+    },
+    {
+        "dt": "Print Format",
+        "filters": [
+            ["name", "like", "%Almouhana%"]
+        ]
+    }
+]
+
 # Apps
 # ------------------
 
@@ -43,7 +65,7 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {"Sales Invoice": "public/js/sales_invoice.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -144,6 +166,13 @@ app_license = "mit"
 # 		"on_trash": "method"
 # 	}
 # }
+
+doc_events = {
+    "Sales Invoice": {
+        "validate": "expenses_management.expenses_management.sales_invoice.sales_invoice.update_available_qty_on_validate",
+        "before_submit": "expenses_management.expenses_management.sales_invoice.sales_invoice.validate_available_qty",
+    }
+}
 
 # Scheduled Tasks
 # ---------------
