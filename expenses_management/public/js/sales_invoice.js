@@ -18,20 +18,8 @@ frappe.ui.form.on("Sales Invoice", {
     },
 
     refresh: function(frm) {
-        // Refresh customer balance on form load
-        if (frm.doc.customer && !frm.doc.__islocal) {
-            frappe.call({
-                method: "expenses_management.expenses_management.sales_invoice.sales_invoice.get_customer_balance",
-                args: {
-                    customer: frm.doc.customer
-                },
-                callback: function(r) {
-                    if (r.message !== undefined) {
-                        frm.set_value("custom_customer_balance", r.message);
-                    }
-                }
-            });
-        }
+        // On load, use existing DB values - don't fetch fresh data
+        // Fresh data is only fetched when customer field changes
     }
 });
 
