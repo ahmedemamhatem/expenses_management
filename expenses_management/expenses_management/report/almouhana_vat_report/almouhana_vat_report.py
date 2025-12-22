@@ -537,6 +537,11 @@ def get_sales_vat_totals_sql(filters):
         if not effective_zatca_cat and vat_amount == 0 and grand_total > 0:
             effective_zatca_cat = "Zero Rated"
 
+        # If category is "Standard" but there's no VAT on invoice, treat as Zero Rated
+        # (handles data inconsistency where ZATCA category is set but no tax applied)
+        if effective_zatca_cat == "Standard" and vat_amount == 0 and net_amount > 0:
+            effective_zatca_cat = "Zero Rated"
+
         # --- Zero Rated ---
         if effective_zatca_cat == "Zero Rated":
             totals["Zero Rated"][amount_key] += net_amount
@@ -653,12 +658,14 @@ def get_purchase_vat_totals_sql(filters):
         if not effective_zatca_cat and vat_amount == 0 and net_amount > 0:
             effective_zatca_cat = "Zero Rated"
 
-        # If category is "Standard" but there's no VAT, it should be Zero Rated
-        # (handles data inconsistency where ZATCA category is set but no tax applied)
+        # If category is "Standard" but there's no VAT on invoice, it means
+        # VAT was paid at customs (imports) - categorize as ImportsCustoms
         if effective_zatca_cat == "Standard" and vat_amount == 0 and net_amount > 0:
-            effective_zatca_cat = "Zero Rated"
-
-        if effective_zatca_cat == "Zero Rated":
+            totals["ImportsCustoms"][amount_key] += net_amount
+            # VAT paid at customs is 15% of net amount
+            customs_vat = net_amount * 0.15
+            totals["ImportsCustoms"][vat_key] += customs_vat
+        elif effective_zatca_cat == "Zero Rated":
             totals["Zero Rated"][amount_key] += net_amount
         elif effective_zatca_cat == "Standard":
             totals["Standard"][amount_key] += net_amount
@@ -670,7 +677,8 @@ def get_purchase_vat_totals_sql(filters):
             totals["Standard"][amount_key] += net_amount
             totals["Standard"][vat_key] += vat_amount
 
-        if int(r.get("custom_zatca_import_invoice") or 0) == 1:
+        # Also check explicit import flag
+        if int(r.get("custom_zatca_import_invoice") or 0) == 1 and vat_amount > 0:
             totals["ImportsCustoms"][amount_key] += net_amount
             totals["ImportsCustoms"][vat_key] += vat_amount
 
