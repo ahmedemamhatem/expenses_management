@@ -658,13 +658,12 @@ def get_purchase_vat_totals_sql(filters):
         if not effective_zatca_cat and vat_amount == 0 and net_amount > 0:
             effective_zatca_cat = "Zero Rated"
 
-        # If category is "Standard" but there's no VAT on invoice, it means
-        # VAT was paid at customs (imports) - categorize as ImportsCustoms
-        # VAT amount is 0 on invoice since it was paid at customs separately
+        # If category is "Standard" but there's no VAT on invoice, treat as Zero Rated
+        # (imports from outside Saudi Arabia are zero-rated)
         if effective_zatca_cat == "Standard" and vat_amount == 0 and net_amount > 0:
-            totals["ImportsCustoms"][amount_key] += net_amount
-            # VAT is 0 on invoice - paid at customs separately (not tracked here)
-        elif effective_zatca_cat == "Zero Rated":
+            effective_zatca_cat = "Zero Rated"
+
+        if effective_zatca_cat == "Zero Rated":
             totals["Zero Rated"][amount_key] += net_amount
         elif effective_zatca_cat == "Standard":
             totals["Standard"][amount_key] += net_amount
