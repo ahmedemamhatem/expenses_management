@@ -856,10 +856,10 @@ def get_expenses_vat_totals_sql(filters):
 # -----------------------------
 def get_columns():
     return [
-        {"label": _("Category / الفئة"), "fieldname": "category", "fieldtype": "Data", "width": 500, "options": "HTML"},
-        {"label": _("Amount / المبلغ (SAR)"), "fieldname": "amount", "fieldtype": "Currency", "width": 160},
-        {"label": _("VAT / الضريبة (SAR)"), "fieldname": "vat_amount", "fieldtype": "Currency", "width": 160},
-        {"label": _("Returns / المرتجعات (SAR)"), "fieldname": "returned_amount", "fieldtype": "Currency", "width": 160},
-        {"label": _("Returns VAT / ضريبة المرتجعات (SAR)"), "fieldname": "returned_vat", "fieldtype": "Currency", "width": 160},
-        {"label": _("Net VAT / صافي الضريبة (SAR)"), "fieldname": "net_vat", "fieldtype": "Currency", "width": 160},
+        {"label": _("Category / الفئة"), "fieldname": "category", "fieldtype": "Data", "width": 550, "options": "HTML"},
+        {"label": _("Amount / المبلغ (SAR)"), "fieldname": "amount", "fieldtype": "Currency", "width": 200},
+        {"label": _("VAT / الضريبة (SAR)"), "fieldname": "vat_amount", "fieldtype": "Currency", "width": 200},
+        {"label": _("Returns / المرتجعات (SAR)"), "fieldname": "returned_amount", "fieldtype": "Currency", "width": 200},
+        {"label": _("Returns VAT / ضريبة المرتجعات (SAR)"), "fieldname": "returned_vat", "fieldtype": "Currency", "width": 200},
+        {"label": _("Net VAT / صافي الضريبة (SAR)"), "fieldname": "net_vat", "fieldtype": "Currency", "width": 200},
     ]
