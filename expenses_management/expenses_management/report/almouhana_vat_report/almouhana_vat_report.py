@@ -768,17 +768,20 @@ def get_purchase_vat_totals_sql(filters):
         # Priority: Tax Template's Tax Category ZATCA category > Invoice ZATCA category
         effective_zatca_cat = template_zatca_cat or r.get("custom_zatca_tax_category")
 
-        # If no category is determined BUT the invoice has 0 tax, treat as Zero Rated
+        # If no category is determined BUT the invoice has 0 tax, treat as Imports Reverse Charge
         if not effective_zatca_cat and vat_amount == 0 and net_amount > 0:
-            effective_zatca_cat = "Zero Rated"
+            effective_zatca_cat = "ImportsReverseCharge"
 
-        # If category is "Standard" but there's no VAT on invoice, treat as Zero Rated
-        # (could be imports from outside or data inconsistency)
+        # If category is "Standard" but there's no VAT on invoice, treat as Imports Reverse Charge
+        # (imports from outside Saudi Arabia with reverse charge mechanism)
         if effective_zatca_cat == "Standard" and vat_amount == 0 and net_amount > 0:
-            effective_zatca_cat = "Zero Rated"
+            effective_zatca_cat = "ImportsReverseCharge"
 
+        # If Zero Rated, move to Imports Reverse Charge
         if effective_zatca_cat == "Zero Rated":
-            totals["Zero Rated"][amount_key] += net_amount
+            totals["ImportsReverseCharge"][amount_key] += net_amount
+        elif effective_zatca_cat == "ImportsReverseCharge":
+            totals["ImportsReverseCharge"][amount_key] += net_amount
         elif effective_zatca_cat == "Standard":
             totals["Standard"][amount_key] += net_amount
             totals["Standard"][vat_key] += vat_amount
