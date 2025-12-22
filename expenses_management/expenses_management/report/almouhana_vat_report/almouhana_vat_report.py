@@ -653,6 +653,11 @@ def get_purchase_vat_totals_sql(filters):
         if not effective_zatca_cat and vat_amount == 0 and net_amount > 0:
             effective_zatca_cat = "Zero Rated"
 
+        # If category is "Standard" but there's no VAT, it should be Zero Rated
+        # (handles data inconsistency where ZATCA category is set but no tax applied)
+        if effective_zatca_cat == "Standard" and vat_amount == 0 and net_amount > 0:
+            effective_zatca_cat = "Zero Rated"
+
         if effective_zatca_cat == "Zero Rated":
             totals["Zero Rated"][amount_key] += net_amount
         elif effective_zatca_cat == "Standard":
