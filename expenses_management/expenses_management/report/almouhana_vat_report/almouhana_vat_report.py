@@ -42,51 +42,79 @@ def execute(filters=None):
 
 
 def generate_single_company_report(filters):
-    """Generate report for a single company"""
+    """Generate report for a single company - ZATCA compliant"""
     data = []
 
     # -----------------------------
-    # 1. SALES VAT
+    # 1. SALES VAT (OUTPUT VAT)
     # -----------------------------
     sales_totals = get_sales_vat_totals_sql(filters)
 
     data.append({
-        "category": "<b>Sales VAT</b>",
+        "category": "<b>المبيعات - ضريبة القيمة المضافة المستحقة (OUTPUT VAT)</b>",
         "amount": None, "vat_amount": None,
         "returned_amount": None, "returned_vat": None, "net_vat": None
     })
 
-    for key in ["Standard", "HealthcareEdu", "Zero Rated", "Exports", "Exempt"]:
-        cat_name = {
-            "Standard": "Standard rated sales",
-            "HealthcareEdu": "Private Healthcare / Private Education sales to citizens",
-            "Zero Rated": "Zero rated domestic sales",
-            "Exports": "Exports",
-            "Exempt": "Exempt sales"
-        }[key]
+    # Box 1: Standard rated sales (15%)
+    data.append({
+        "category": "1. المبيعات الخاضعة للنسبة الأساسية / Standard rated sales (15%)",
+        "amount": sales_totals["Standard"]["amount"],
+        "vat_amount": sales_totals["Standard"]["vat"],
+        "returned_amount": sales_totals["Standard"]["returned_amount"],
+        "returned_vat": sales_totals["Standard"]["returned_vat"],
+        "net_vat": sales_totals["Standard"]["vat"] - sales_totals["Standard"]["returned_vat"],
+    })
 
-        vat = sales_totals[key]["vat"] if key not in ["Zero Rated", "Exempt"] else 0
-        ret_vat = sales_totals[key]["returned_vat"] if key not in ["Zero Rated", "Exempt"] else 0
-        net_vat = vat - ret_vat
+    # Box 2: Sales to registered customers in other GCC states
+    data.append({
+        "category": "2. المبيعات للعملاء المسجلين في دول مجلس التعاون / Sales to registered customers in GCC",
+        "amount": sales_totals["GCC"]["amount"],
+        "vat_amount": sales_totals["GCC"]["vat"],
+        "returned_amount": sales_totals["GCC"]["returned_amount"],
+        "returned_vat": sales_totals["GCC"]["returned_vat"],
+        "net_vat": sales_totals["GCC"]["vat"] - sales_totals["GCC"]["returned_vat"],
+    })
 
-        data.append({
-            "category": cat_name,
-            "amount": sales_totals[key]["amount"],
-            "vat_amount": vat,
-            "returned_amount": sales_totals[key]["returned_amount"],
-            "returned_vat": ret_vat,
-            "net_vat": net_vat,
-        })
+    # Box 3: Zero rated domestic sales
+    data.append({
+        "category": "3. المبيعات المحلية الخاضعة لنسبة الصفر / Zero rated domestic sales",
+        "amount": sales_totals["Zero Rated"]["amount"],
+        "vat_amount": 0,
+        "returned_amount": sales_totals["Zero Rated"]["returned_amount"],
+        "returned_vat": 0,
+        "net_vat": 0,
+    })
 
-    # Total Sales
+    # Box 4: Exports
+    data.append({
+        "category": "4. الصادرات / Exports",
+        "amount": sales_totals["Exports"]["amount"],
+        "vat_amount": 0,  # Exports are zero-rated
+        "returned_amount": sales_totals["Exports"]["returned_amount"],
+        "returned_vat": 0,
+        "net_vat": 0,
+    })
+
+    # Box 5: Exempt sales
+    data.append({
+        "category": "5. المبيعات المعفاة / Exempt sales",
+        "amount": sales_totals["Exempt"]["amount"],
+        "vat_amount": 0,
+        "returned_amount": sales_totals["Exempt"]["returned_amount"],
+        "returned_vat": 0,
+        "net_vat": 0,
+    })
+
+    # Box 6: Total Sales
     total_sales_amount = sum(v["amount"] for v in sales_totals.values())
-    total_sales_vat = sum(v["vat"] for v in sales_totals.values())
+    total_sales_vat = sales_totals["Standard"]["vat"] + sales_totals["GCC"]["vat"]  # Only taxable categories
     total_sales_returned_amount = sum(v["returned_amount"] for v in sales_totals.values())
-    total_sales_returned_vat = sum(v["returned_vat"] for v in sales_totals.values())
+    total_sales_returned_vat = sales_totals["Standard"]["returned_vat"] + sales_totals["GCC"]["returned_vat"]
     total_sales_net_vat = total_sales_vat - total_sales_returned_vat
 
     data.append({
-        "category": "<b>Total Sales</b>",
+        "category": "<b>6. إجمالي المبيعات / Total Sales</b>",
         "amount": total_sales_amount,
         "vat_amount": total_sales_vat,
         "returned_amount": total_sales_returned_amount,
@@ -95,7 +123,7 @@ def generate_single_company_report(filters):
     })
 
     # -----------------------------
-    # 2. PURCHASE VAT
+    # 2. PURCHASE VAT (INPUT VAT)
     # -----------------------------
     purchase_totals = get_purchase_vat_totals_sql(filters)
 
@@ -105,41 +133,74 @@ def generate_single_company_report(filters):
         "returned_amount": None, "returned_vat": None, "net_vat": None
     })
     data.append({
-        "category": "<b>Purchase VAT</b>",
+        "category": "<b>المشتريات - ضريبة القيمة المضافة القابلة للخصم (INPUT VAT)</b>",
         "amount": None, "vat_amount": None,
         "returned_amount": None, "returned_vat": None, "net_vat": None
     })
 
-    for key in ["Standard", "ImportsCustoms", "Zero Rated", "Exempt"]:
-        cat_name = {
-            "Standard": "Standard rated domestic purchases",
-            "ImportsCustoms": "Imports subject to VAT paid at customs",
-            "Zero Rated": "Zero rated purchases",
-            "Exempt": "Exempt purchases"
-        }[key]
+    # Box 7: Standard rated domestic purchases
+    data.append({
+        "category": "7. المشتريات المحلية الخاضعة للنسبة الأساسية / Standard rated domestic purchases (15%)",
+        "amount": purchase_totals["Standard"]["amount"],
+        "vat_amount": purchase_totals["Standard"]["vat"],
+        "returned_amount": purchase_totals["Standard"]["returned_amount"],
+        "returned_vat": purchase_totals["Standard"]["returned_vat"],
+        "net_vat": purchase_totals["Standard"]["vat"] - purchase_totals["Standard"]["returned_vat"],
+    })
 
-        vat = purchase_totals[key]["vat"] if key not in ["Zero Rated", "Exempt"] else 0
-        ret_vat = purchase_totals[key]["returned_vat"] if key not in ["Zero Rated", "Exempt"] else 0
-        net_vat = vat - ret_vat
+    # Box 8: Imports subject to VAT paid at customs
+    data.append({
+        "category": "8. الواردات الخاضعة للضريبة المدفوعة في الجمارك / Imports - VAT paid at customs",
+        "amount": purchase_totals["ImportsCustoms"]["amount"],
+        "vat_amount": purchase_totals["ImportsCustoms"]["vat"],
+        "returned_amount": purchase_totals["ImportsCustoms"]["returned_amount"],
+        "returned_vat": purchase_totals["ImportsCustoms"]["returned_vat"],
+        "net_vat": purchase_totals["ImportsCustoms"]["vat"] - purchase_totals["ImportsCustoms"]["returned_vat"],
+    })
 
-        data.append({
-            "category": cat_name,
-            "amount": purchase_totals[key]["amount"],
-            "vat_amount": vat,
-            "returned_amount": purchase_totals[key]["returned_amount"],
-            "returned_vat": ret_vat,
-            "net_vat": net_vat,
-        })
+    # Box 9: Imports subject to VAT under reverse charge
+    data.append({
+        "category": "9. الواردات الخاضعة للضريبة بموجب آلية الاحتساب العكسي / Imports - Reverse charge",
+        "amount": purchase_totals["ImportsReverseCharge"]["amount"],
+        "vat_amount": purchase_totals["ImportsReverseCharge"]["vat"],
+        "returned_amount": purchase_totals["ImportsReverseCharge"]["returned_amount"],
+        "returned_vat": purchase_totals["ImportsReverseCharge"]["returned_vat"],
+        "net_vat": purchase_totals["ImportsReverseCharge"]["vat"] - purchase_totals["ImportsReverseCharge"]["returned_vat"],
+    })
 
-    # Total Purchases
+    # Box 10: Zero rated purchases
+    data.append({
+        "category": "10. المشتريات الخاضعة لنسبة الصفر / Zero rated purchases",
+        "amount": purchase_totals["Zero Rated"]["amount"],
+        "vat_amount": 0,
+        "returned_amount": purchase_totals["Zero Rated"]["returned_amount"],
+        "returned_vat": 0,
+        "net_vat": 0,
+    })
+
+    # Box 11: Exempt purchases
+    data.append({
+        "category": "11. المشتريات المعفاة / Exempt purchases",
+        "amount": purchase_totals["Exempt"]["amount"],
+        "vat_amount": 0,
+        "returned_amount": purchase_totals["Exempt"]["returned_amount"],
+        "returned_vat": 0,
+        "net_vat": 0,
+    })
+
+    # Box 12: Total Purchases
     total_purchase_amount = sum(v["amount"] for v in purchase_totals.values())
-    total_purchase_vat = sum(v["vat"] for v in purchase_totals.values())
+    total_purchase_vat = (purchase_totals["Standard"]["vat"] +
+                          purchase_totals["ImportsCustoms"]["vat"] +
+                          purchase_totals["ImportsReverseCharge"]["vat"])
     total_purchase_returned_amount = sum(v["returned_amount"] for v in purchase_totals.values())
-    total_purchase_returned_vat = sum(v["returned_vat"] for v in purchase_totals.values())
+    total_purchase_returned_vat = (purchase_totals["Standard"]["returned_vat"] +
+                                   purchase_totals["ImportsCustoms"]["returned_vat"] +
+                                   purchase_totals["ImportsReverseCharge"]["returned_vat"])
     total_purchase_net_vat = total_purchase_vat - total_purchase_returned_vat
 
     data.append({
-        "category": "<b>Total purchases</b>",
+        "category": "<b>12. إجمالي المشتريات / Total Purchases</b>",
         "amount": total_purchase_amount,
         "vat_amount": total_purchase_vat,
         "returned_amount": total_purchase_returned_amount,
@@ -148,50 +209,75 @@ def generate_single_company_report(filters):
     })
 
     # -----------------------------
-    # 3. EXPENSES VAT
+    # 3. EXPENSES VAT (Additional Input VAT)
     # -----------------------------
     expenses_totals = get_expenses_vat_totals_sql(filters)
 
+    if expenses_totals["Standard"]["amount"] > 0 or expenses_totals["Standard"]["vat"] > 0:
+        data.append({
+            "category": "",
+            "amount": None, "vat_amount": None,
+            "returned_amount": None, "returned_vat": None, "net_vat": None
+        })
+        data.append({
+            "category": "<b>المصروفات - ضريبة القيمة المضافة القابلة للخصم (EXPENSES VAT)</b>",
+            "amount": None, "vat_amount": None,
+            "returned_amount": None, "returned_vat": None, "net_vat": None
+        })
+
+        # Standard rated expenses
+        standard_expenses_net = expenses_totals["Standard"]["amount"]
+        standard_expenses_vat = expenses_totals["Standard"]["vat"]
+
+        data.append({
+            "category": "المصروفات الخاضعة للنسبة الأساسية / Standard rated expenses",
+            "amount": standard_expenses_net,
+            "vat_amount": standard_expenses_vat,
+            "returned_amount": None,
+            "returned_vat": None,
+            "net_vat": standard_expenses_vat,
+        })
+
+        total_expenses_vat = standard_expenses_vat
+    else:
+        total_expenses_vat = 0
+
+    # -----------------------------
+    # 4. VAT SUMMARY
+    # -----------------------------
     data.append({
         "category": "",
         "amount": None, "vat_amount": None,
         "returned_amount": None, "returned_vat": None, "net_vat": None
     })
     data.append({
-        "category": "<b>Expenses VAT</b>",
+        "category": "<b>═══════════════════════════════════════════════════════════════</b>",
         "amount": None, "vat_amount": None,
         "returned_amount": None, "returned_vat": None, "net_vat": None
     })
 
-    # Standard rated expenses (with VAT) - Amount includes tax
-    standard_expenses_net = expenses_totals["Standard"]["amount"]
-    standard_expenses_vat = expenses_totals["Standard"]["vat"]
-    standard_expenses_gross = standard_expenses_net + standard_expenses_vat
-
+    # Box 13: Total Output VAT
     data.append({
-        "category": "Standard rated expenses",
-        "amount": standard_expenses_gross,
-        "vat_amount": standard_expenses_vat,
+        "category": "<b>13. إجمالي ضريبة القيمة المضافة المستحقة / Total Output VAT</b>",
+        "amount": None,
+        "vat_amount": total_sales_vat,
         "returned_amount": None,
-        "returned_vat": None,
-        "net_vat": standard_expenses_vat,
+        "returned_vat": total_sales_returned_vat,
+        "net_vat": total_sales_net_vat,
     })
 
-    # Total Expenses
-    total_expenses_amount = standard_expenses_gross
-    total_expenses_vat = standard_expenses_vat
-
-    data.append({
-        "category": "<b>Total Expenses</b>",
-        "amount": total_expenses_amount,
-        "vat_amount": total_expenses_vat,
-        "returned_amount": None,
-        "returned_vat": None,
-        "net_vat": total_expenses_vat,
-    })
-
-    # Net VAT Due (including expenses)
+    # Box 14: Total Input VAT (purchases + expenses)
     total_input_vat = total_purchase_net_vat + total_expenses_vat
+    data.append({
+        "category": "<b>14. إجمالي ضريبة القيمة المضافة القابلة للخصم / Total Input VAT</b>",
+        "amount": None,
+        "vat_amount": total_purchase_vat + total_expenses_vat,
+        "returned_amount": None,
+        "returned_vat": total_purchase_returned_vat,
+        "net_vat": total_input_vat,
+    })
+
+    # Box 15: Net VAT Due
     net_vat_due = total_sales_net_vat - total_input_vat
 
     data.append({
@@ -199,14 +285,25 @@ def generate_single_company_report(filters):
         "amount": None, "vat_amount": None,
         "returned_amount": None, "returned_vat": None, "net_vat": None
     })
-    data.append({
-        "category": "<b>Net VAT Due (Sales VAT - Purchases VAT - Expenses VAT)</b>",
-        "amount": None,
-        "vat_amount": None,
-        "returned_amount": None,
-        "returned_vat": None,
-        "net_vat": net_vat_due,
-    })
+
+    if net_vat_due >= 0:
+        data.append({
+            "category": "<b>15. صافي ضريبة القيمة المضافة المستحقة / Net VAT Due</b>",
+            "amount": None,
+            "vat_amount": None,
+            "returned_amount": None,
+            "returned_vat": None,
+            "net_vat": net_vat_due,
+        })
+    else:
+        data.append({
+            "category": "<b>15. صافي ضريبة القيمة المضافة القابلة للاسترداد / Net VAT Refundable</b>",
+            "amount": None,
+            "vat_amount": None,
+            "returned_amount": None,
+            "returned_vat": None,
+            "net_vat": net_vat_due,
+        })
 
     return data
 
@@ -235,25 +332,28 @@ def generate_consolidated_report(filters, companies):
         purchase_totals = get_purchase_vat_totals_sql(company_filters)
         expenses_totals = get_expenses_vat_totals_sql(company_filters)
 
-        # Calculate company totals
+        # Calculate company totals - only taxable categories for VAT
         company_sales_amount = sum(v["amount"] for v in sales_totals.values())
-        company_sales_vat = sum(v["vat"] for v in sales_totals.values())
+        company_sales_vat = sales_totals["Standard"]["vat"] + sales_totals["GCC"]["vat"]
         company_sales_returned_amount = sum(v["returned_amount"] for v in sales_totals.values())
-        company_sales_returned_vat = sum(v["returned_vat"] for v in sales_totals.values())
+        company_sales_returned_vat = sales_totals["Standard"]["returned_vat"] + sales_totals["GCC"]["returned_vat"]
         company_sales_net_vat = company_sales_vat - company_sales_returned_vat
 
         company_purchase_amount = sum(v["amount"] for v in purchase_totals.values())
-        company_purchase_vat = sum(v["vat"] for v in purchase_totals.values())
+        company_purchase_vat = (purchase_totals["Standard"]["vat"] +
+                                purchase_totals["ImportsCustoms"]["vat"] +
+                                purchase_totals["ImportsReverseCharge"]["vat"])
         company_purchase_returned_amount = sum(v["returned_amount"] for v in purchase_totals.values())
-        company_purchase_returned_vat = sum(v["returned_vat"] for v in purchase_totals.values())
+        company_purchase_returned_vat = (purchase_totals["Standard"]["returned_vat"] +
+                                         purchase_totals["ImportsCustoms"]["returned_vat"] +
+                                         purchase_totals["ImportsReverseCharge"]["returned_vat"])
         company_purchase_net_vat = company_purchase_vat - company_purchase_returned_vat
 
         company_expenses_net = expenses_totals["Standard"]["amount"]
         company_expenses_vat = expenses_totals["Standard"]["vat"]
-        company_expenses_amount = company_expenses_net + company_expenses_vat  # Gross amount including tax
 
         # Skip if company has no data
-        if (company_sales_amount == 0 and company_purchase_amount == 0 and company_expenses_amount == 0):
+        if (company_sales_amount == 0 and company_purchase_amount == 0 and company_expenses_net == 0):
             continue
 
         # Add company header
@@ -265,7 +365,7 @@ def generate_consolidated_report(filters, companies):
 
         # Sales row
         data.append({
-            "category": "Sales VAT",
+            "category": "ضريبة المبيعات / Sales VAT",
             "amount": company_sales_amount,
             "vat_amount": company_sales_vat,
             "returned_amount": company_sales_returned_amount,
@@ -275,7 +375,7 @@ def generate_consolidated_report(filters, companies):
 
         # Purchases row
         data.append({
-            "category": "Purchases VAT",
+            "category": "ضريبة المشتريات / Purchases VAT",
             "amount": company_purchase_amount,
             "vat_amount": company_purchase_vat,
             "returned_amount": company_purchase_returned_amount,
@@ -283,20 +383,21 @@ def generate_consolidated_report(filters, companies):
             "net_vat": company_purchase_net_vat,
         })
 
-        # Expenses row
-        data.append({
-            "category": "Expenses VAT",
-            "amount": company_expenses_amount,
-            "vat_amount": company_expenses_vat,
-            "returned_amount": None,
-            "returned_vat": None,
-            "net_vat": company_expenses_vat,
-        })
+        # Expenses row (if any)
+        if company_expenses_vat > 0:
+            data.append({
+                "category": "ضريبة المصروفات / Expenses VAT",
+                "amount": company_expenses_net,
+                "vat_amount": company_expenses_vat,
+                "returned_amount": None,
+                "returned_vat": None,
+                "net_vat": company_expenses_vat,
+            })
 
         # Company Net VAT
         company_net_vat = company_sales_net_vat - company_purchase_net_vat - company_expenses_vat
         data.append({
-            "category": "<b>Net VAT Due</b>",
+            "category": "<b>صافي الضريبة المستحقة / Net VAT Due</b>",
             "amount": None,
             "vat_amount": None,
             "returned_amount": None,
@@ -317,7 +418,7 @@ def generate_consolidated_report(filters, companies):
         grand_totals["purchases"]["returned_vat"] += company_purchase_returned_vat
         grand_totals["purchases"]["net_vat"] += company_purchase_net_vat
 
-        grand_totals["expenses"]["amount"] += company_expenses_amount
+        grand_totals["expenses"]["amount"] += company_expenses_net
         grand_totals["expenses"]["vat"] += company_expenses_vat
 
         # Empty row between companies
@@ -334,13 +435,13 @@ def generate_consolidated_report(filters, companies):
         "returned_amount": None, "returned_vat": None, "net_vat": None
     })
     data.append({
-        "category": "<b>CONSOLIDATED TOTALS</b>",
+        "category": "<b>الإجماليات الموحدة / CONSOLIDATED TOTALS</b>",
         "amount": None, "vat_amount": None,
         "returned_amount": None, "returned_vat": None, "net_vat": None
     })
 
     data.append({
-        "category": "<b>Total Sales VAT</b>",
+        "category": "<b>إجمالي ضريبة المبيعات / Total Sales VAT</b>",
         "amount": grand_totals["sales"]["amount"],
         "vat_amount": grand_totals["sales"]["vat"],
         "returned_amount": grand_totals["sales"]["returned_amount"],
@@ -349,7 +450,7 @@ def generate_consolidated_report(filters, companies):
     })
 
     data.append({
-        "category": "<b>Total Purchases VAT</b>",
+        "category": "<b>إجمالي ضريبة المشتريات / Total Purchases VAT</b>",
         "amount": grand_totals["purchases"]["amount"],
         "vat_amount": grand_totals["purchases"]["vat"],
         "returned_amount": grand_totals["purchases"]["returned_amount"],
@@ -357,14 +458,15 @@ def generate_consolidated_report(filters, companies):
         "net_vat": grand_totals["purchases"]["net_vat"],
     })
 
-    data.append({
-        "category": "<b>Total Expenses VAT</b>",
-        "amount": grand_totals["expenses"]["amount"],
-        "vat_amount": grand_totals["expenses"]["vat"],
-        "returned_amount": None,
-        "returned_vat": None,
-        "net_vat": grand_totals["expenses"]["vat"],
-    })
+    if grand_totals["expenses"]["vat"] > 0:
+        data.append({
+            "category": "<b>إجمالي ضريبة المصروفات / Total Expenses VAT</b>",
+            "amount": grand_totals["expenses"]["amount"],
+            "vat_amount": grand_totals["expenses"]["vat"],
+            "returned_amount": None,
+            "returned_vat": None,
+            "net_vat": grand_totals["expenses"]["vat"],
+        })
 
     # Grand Net VAT Due
     grand_net_vat = grand_totals["sales"]["net_vat"] - grand_totals["purchases"]["net_vat"] - grand_totals["expenses"]["vat"]
@@ -373,14 +475,25 @@ def generate_consolidated_report(filters, companies):
         "amount": None, "vat_amount": None,
         "returned_amount": None, "returned_vat": None, "net_vat": None
     })
-    data.append({
-        "category": "<b>GRAND NET VAT DUE</b>",
-        "amount": None,
-        "vat_amount": None,
-        "returned_amount": None,
-        "returned_vat": None,
-        "net_vat": grand_net_vat,
-    })
+
+    if grand_net_vat >= 0:
+        data.append({
+            "category": "<b>صافي الضريبة المستحقة الإجمالي / GRAND NET VAT DUE</b>",
+            "amount": None,
+            "vat_amount": None,
+            "returned_amount": None,
+            "returned_vat": None,
+            "net_vat": grand_net_vat,
+        })
+    else:
+        data.append({
+            "category": "<b>صافي الضريبة القابلة للاسترداد / GRAND NET VAT REFUNDABLE</b>",
+            "amount": None,
+            "vat_amount": None,
+            "returned_amount": None,
+            "returned_vat": None,
+            "net_vat": grand_net_vat,
+        })
 
     return data
 
@@ -439,7 +552,7 @@ def get_zatca_category_from_template(zatca_cat_value):
 def get_sales_vat_totals_sql(filters):
     totals = {
         "Standard": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
-        "HealthcareEdu": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
+        "GCC": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
         "Zero Rated": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
         "Exports": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
         "Exempt": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
@@ -509,7 +622,6 @@ def get_sales_vat_totals_sql(filters):
     # Process invoices
     for inv_doc in invoices.values():
         is_return = bool(inv_doc["is_return"])
-        is_debit = bool(inv_doc["is_debit_note"])
 
         grand_total = abs(inv_doc["grand_total"] or 0)
         vat_amount = abs(inv_doc["total_taxes_and_charges"] or 0)
@@ -530,6 +642,12 @@ def get_sales_vat_totals_sql(filters):
             amount_key = "amount"
             vat_key = "vat"
 
+        # Check if it's an export first (exports are zero-rated, no VAT)
+        if int(inv_doc.get("custom_zatca_export_invoice") or 0) == 1:
+            totals["Exports"][amount_key] += net_amount
+            # Exports have 0 VAT - don't add VAT
+            continue
+
         # Priority: Tax Template's Tax Category ZATCA category > Invoice ZATCA category
         effective_zatca_cat = template_zatca_cat or inv_doc.get("custom_zatca_tax_category")
 
@@ -538,7 +656,6 @@ def get_sales_vat_totals_sql(filters):
             effective_zatca_cat = "Zero Rated"
 
         # If category is "Standard" but there's no VAT on invoice, treat as Zero Rated
-        # (handles data inconsistency where ZATCA category is set but no tax applied)
         if effective_zatca_cat == "Standard" and vat_amount == 0 and net_amount > 0:
             effective_zatca_cat = "Zero Rated"
 
@@ -579,23 +696,6 @@ def get_sales_vat_totals_sql(filters):
                     totals["Standard"][amount_key] += net_amount
                     totals["Standard"][vat_key] += vat_amount
 
-        # --- Exports ---
-        if int(inv_doc.get("custom_zatca_export_invoice") or 0) == 1:
-            totals["Exports"][amount_key] += net_amount
-            totals["Exports"][vat_key] += vat_amount
-
-        # --- Healthcare / Education ---
-        if inv_doc.get("custom_exemption_reason_code") in ["VATEX-SA-HEA", "VATEX-SA-EDU"]:
-            totals["HealthcareEdu"][amount_key] += net_amount
-            totals["HealthcareEdu"][vat_key] += vat_amount
-        else:
-            for item in inv_doc["items"]:
-                if item.get("template_exemption_code") in ["VATEX-SA-HEA", "VATEX-SA-EDU"]:
-                    item_amount = abs(item.get("net_amount") or item.get("amount") or 0)
-                    item_vat = abs(calculate_item_vat(item))
-                    totals["HealthcareEdu"][amount_key] += item_amount
-                    totals["HealthcareEdu"][vat_key] += item_vat
-
     return totals
 
 
@@ -606,6 +706,7 @@ def get_purchase_vat_totals_sql(filters):
     totals = {
         "Standard": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
         "ImportsCustoms": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
+        "ImportsReverseCharge": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
         "Zero Rated": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
         "Exempt": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
     }
@@ -651,6 +752,15 @@ def get_purchase_vat_totals_sql(filters):
             amount_key = "amount"
             vat_key = "vat"
 
+        # Check if it's an import invoice (VAT paid at customs)
+        is_import = int(r.get("custom_zatca_import_invoice") or 0) == 1
+
+        if is_import:
+            # Import invoice - VAT paid at customs
+            totals["ImportsCustoms"][amount_key] += net_amount
+            totals["ImportsCustoms"][vat_key] += vat_amount
+            continue
+
         # Priority: Tax Template's Tax Category ZATCA category > Invoice ZATCA category
         effective_zatca_cat = template_zatca_cat or r.get("custom_zatca_tax_category")
 
@@ -659,7 +769,7 @@ def get_purchase_vat_totals_sql(filters):
             effective_zatca_cat = "Zero Rated"
 
         # If category is "Standard" but there's no VAT on invoice, treat as Zero Rated
-        # (imports from outside Saudi Arabia are zero-rated)
+        # (could be imports from outside or data inconsistency)
         if effective_zatca_cat == "Standard" and vat_amount == 0 and net_amount > 0:
             effective_zatca_cat = "Zero Rated"
 
@@ -674,11 +784,6 @@ def get_purchase_vat_totals_sql(filters):
             # No category but has tax - treat as Standard
             totals["Standard"][amount_key] += net_amount
             totals["Standard"][vat_key] += vat_amount
-
-        # Also check explicit import flag
-        if int(r.get("custom_zatca_import_invoice") or 0) == 1 and vat_amount > 0:
-            totals["ImportsCustoms"][amount_key] += net_amount
-            totals["ImportsCustoms"][vat_key] += vat_amount
 
     return totals
 
@@ -747,10 +852,10 @@ def get_expenses_vat_totals_sql(filters):
 # -----------------------------
 def get_columns():
     return [
-        {"label": "Category", "fieldname": "category", "fieldtype": "Data", "width": 380, "options": "HTML"},
-        {"label": "Amount (SAR)", "fieldname": "amount", "fieldtype": "Currency", "width": 150},
-        {"label": "VAT Amount (SAR)", "fieldname": "vat_amount", "fieldtype": "Currency", "width": 150},
-        {"label": "Returned Amount (SAR)", "fieldname": "returned_amount", "fieldtype": "Currency", "width": 150},
-        {"label": "Returned VAT (SAR)", "fieldname": "returned_vat", "fieldtype": "Currency", "width": 150},
-        {"label": "Net VAT (SAR)", "fieldname": "net_vat", "fieldtype": "Currency", "width": 150},
+        {"label": _("Category / الفئة"), "fieldname": "category", "fieldtype": "Data", "width": 450, "options": "HTML"},
+        {"label": _("Amount / المبلغ (SAR)"), "fieldname": "amount", "fieldtype": "Currency", "width": 140},
+        {"label": _("VAT / الضريبة (SAR)"), "fieldname": "vat_amount", "fieldtype": "Currency", "width": 140},
+        {"label": _("Returns / المرتجعات (SAR)"), "fieldname": "returned_amount", "fieldtype": "Currency", "width": 140},
+        {"label": _("Returns VAT / ضريبة المرتجعات (SAR)"), "fieldname": "returned_vat", "fieldtype": "Currency", "width": 140},
+        {"label": _("Net VAT / صافي الضريبة (SAR)"), "fieldname": "net_vat", "fieldtype": "Currency", "width": 140},
     ]
