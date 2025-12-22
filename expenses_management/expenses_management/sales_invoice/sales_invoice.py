@@ -25,6 +25,30 @@ def get_customer_balance(customer):
 
 
 @frappe.whitelist()
+def get_customer_overdue_amount(customer):
+    """Get customer overdue amount - sum of outstanding from invoices where due_date < today and outstanding > 0"""
+    if not customer:
+        return 0
+
+    today = frappe.utils.today()
+
+    result = frappe.db.sql(
+        """
+        SELECT COALESCE(SUM(outstanding_amount), 0) as overdue_amount
+        FROM `tabSales Invoice`
+        WHERE customer = %s
+        AND docstatus = 1
+        AND due_date < %s
+        AND outstanding_amount > 0
+        """,
+        (customer, today),
+        as_dict=True,
+    )
+
+    return result[0].overdue_amount if result else 0
+
+
+@frappe.whitelist()
 def get_available_qty(item_code, warehouse):
     """Get available quantity for an item in a warehouse"""
     if not item_code or not warehouse:
