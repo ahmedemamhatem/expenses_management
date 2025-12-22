@@ -225,13 +225,14 @@ def generate_single_company_report(filters):
             "returned_amount": None, "returned_vat": None, "net_vat": None
         })
 
-        # Standard rated expenses
+        # Standard rated expenses - Amount includes VAT (gross)
         standard_expenses_net = expenses_totals["Standard"]["amount"]
         standard_expenses_vat = expenses_totals["Standard"]["vat"]
+        standard_expenses_gross = standard_expenses_net + standard_expenses_vat
 
         data.append({
             "category": "المصروفات الخاضعة للنسبة الأساسية / Standard rated expenses",
-            "amount": standard_expenses_net,
+            "amount": standard_expenses_gross,  # Total including VAT
             "vat_amount": standard_expenses_vat,
             "returned_amount": None,
             "returned_vat": None,
@@ -239,8 +240,10 @@ def generate_single_company_report(filters):
         })
 
         total_expenses_vat = standard_expenses_vat
+        total_expenses_amount = standard_expenses_gross
     else:
         total_expenses_vat = 0
+        total_expenses_amount = 0
 
     # -----------------------------
     # 4. VAT SUMMARY
@@ -351,6 +354,7 @@ def generate_consolidated_report(filters, companies):
 
         company_expenses_net = expenses_totals["Standard"]["amount"]
         company_expenses_vat = expenses_totals["Standard"]["vat"]
+        company_expenses_amount = company_expenses_net + company_expenses_vat  # Gross amount including VAT
 
         # Skip if company has no data
         if (company_sales_amount == 0 and company_purchase_amount == 0 and company_expenses_net == 0):
@@ -387,7 +391,7 @@ def generate_consolidated_report(filters, companies):
         if company_expenses_vat > 0:
             data.append({
                 "category": "ضريبة المصروفات / Expenses VAT",
-                "amount": company_expenses_net,
+                "amount": company_expenses_amount,  # Gross amount including VAT
                 "vat_amount": company_expenses_vat,
                 "returned_amount": None,
                 "returned_vat": None,
@@ -418,7 +422,7 @@ def generate_consolidated_report(filters, companies):
         grand_totals["purchases"]["returned_vat"] += company_purchase_returned_vat
         grand_totals["purchases"]["net_vat"] += company_purchase_net_vat
 
-        grand_totals["expenses"]["amount"] += company_expenses_net
+        grand_totals["expenses"]["amount"] += company_expenses_amount
         grand_totals["expenses"]["vat"] += company_expenses_vat
 
         # Empty row between companies
@@ -852,10 +856,10 @@ def get_expenses_vat_totals_sql(filters):
 # -----------------------------
 def get_columns():
     return [
-        {"label": _("Category / الفئة"), "fieldname": "category", "fieldtype": "Data", "width": 450, "options": "HTML"},
-        {"label": _("Amount / المبلغ (SAR)"), "fieldname": "amount", "fieldtype": "Currency", "width": 140},
-        {"label": _("VAT / الضريبة (SAR)"), "fieldname": "vat_amount", "fieldtype": "Currency", "width": 140},
-        {"label": _("Returns / المرتجعات (SAR)"), "fieldname": "returned_amount", "fieldtype": "Currency", "width": 140},
-        {"label": _("Returns VAT / ضريبة المرتجعات (SAR)"), "fieldname": "returned_vat", "fieldtype": "Currency", "width": 140},
-        {"label": _("Net VAT / صافي الضريبة (SAR)"), "fieldname": "net_vat", "fieldtype": "Currency", "width": 140},
+        {"label": _("Category / الفئة"), "fieldname": "category", "fieldtype": "Data", "width": 500, "options": "HTML"},
+        {"label": _("Amount / المبلغ (SAR)"), "fieldname": "amount", "fieldtype": "Currency", "width": 160},
+        {"label": _("VAT / الضريبة (SAR)"), "fieldname": "vat_amount", "fieldtype": "Currency", "width": 160},
+        {"label": _("Returns / المرتجعات (SAR)"), "fieldname": "returned_amount", "fieldtype": "Currency", "width": 160},
+        {"label": _("Returns VAT / ضريبة المرتجعات (SAR)"), "fieldname": "returned_vat", "fieldtype": "Currency", "width": 160},
+        {"label": _("Net VAT / صافي الضريبة (SAR)"), "fieldname": "net_vat", "fieldtype": "Currency", "width": 160},
     ]
