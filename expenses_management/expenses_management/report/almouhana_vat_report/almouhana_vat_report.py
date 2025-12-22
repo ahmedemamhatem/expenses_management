@@ -728,6 +728,7 @@ def get_purchase_vat_totals_sql(filters):
             pi.custom_zatca_tax_category,
             pi.custom_exemption_reason_code,
             pi.custom_zatca_import_invoice,
+            pi.currency AS currency,
             ptct.tax_category AS template_tax_category,
             tc.custom_zatca_category AS template_zatca_category
         FROM `tabPurchase Invoice` pi
@@ -768,18 +769,23 @@ def get_purchase_vat_totals_sql(filters):
         # Priority: Tax Template's Tax Category ZATCA category > Invoice ZATCA category
         effective_zatca_cat = template_zatca_cat or r.get("custom_zatca_tax_category")
 
-        # If no category is determined BUT the invoice has 0 tax, treat as Imports Reverse Charge
-        if not effective_zatca_cat and vat_amount == 0 and net_amount > 0:
+        # Get currency
+        currency = r.get("currency") or "SAR"
+
+        # If no category is determined BUT the invoice has 0 tax and currency is NOT SAR, treat as Imports Reverse Charge
+        if not effective_zatca_cat and vat_amount == 0 and net_amount > 0 and currency != "SAR":
             effective_zatca_cat = "ImportsReverseCharge"
 
-        # If category is "Standard" but there's no VAT on invoice, treat as Imports Reverse Charge
+        # If category is "Standard" but there's no VAT on invoice and currency is NOT SAR, treat as Imports Reverse Charge
         # (imports from outside Saudi Arabia with reverse charge mechanism)
-        if effective_zatca_cat == "Standard" and vat_amount == 0 and net_amount > 0:
+        if effective_zatca_cat == "Standard" and vat_amount == 0 and net_amount > 0 and currency != "SAR":
             effective_zatca_cat = "ImportsReverseCharge"
 
-        # If Zero Rated, move to Imports Reverse Charge
-        if effective_zatca_cat == "Zero Rated":
+        # If Zero Rated and currency is NOT SAR, move to Imports Reverse Charge
+        if effective_zatca_cat == "Zero Rated" and currency != "SAR":
             totals["ImportsReverseCharge"][amount_key] += net_amount
+        elif effective_zatca_cat == "Zero Rated":
+            totals["Zero Rated"][amount_key] += net_amount
         elif effective_zatca_cat == "ImportsReverseCharge":
             totals["ImportsReverseCharge"][amount_key] += net_amount
         elif effective_zatca_cat == "Standard":
