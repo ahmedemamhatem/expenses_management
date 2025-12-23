@@ -772,6 +772,10 @@ def get_purchase_vat_totals_sql(filters):
         # Get currency
         currency = r.get("currency") or "SAR"
 
+        # Skip SAR purchases with 0 VAT - they should not be included in the report
+        if currency == "SAR" and vat_amount == 0 and net_amount > 0:
+            continue
+
         # If no category is determined BUT the invoice has 0 tax and currency is NOT SAR, treat as Imports Reverse Charge
         if not effective_zatca_cat and vat_amount == 0 and net_amount > 0 and currency != "SAR":
             effective_zatca_cat = "ImportsReverseCharge"
