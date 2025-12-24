@@ -554,6 +554,13 @@ def get_zatca_category_from_template(zatca_cat_value):
 # SALES VAT
 # -----------------------------
 def get_sales_vat_totals_sql(filters):
+    """
+    Get sales VAT totals.
+    - Amount = gross amount (including VAT) = base_grand_total
+    - VAT = tax amount = base_total_taxes_and_charges
+    - SAR invoices with 0 VAT = skip (ignore)
+    - Non-SAR invoices with 0 VAT = Exports (Box 4)
+    """
     totals = {
         "Standard": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
         "GCC": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
@@ -576,67 +583,27 @@ def get_sales_vat_totals_sql(filters):
             si.custom_zatca_tax_category AS invoice_zatca_cat,
             si.custom_exemption_reason_code AS invoice_exemption_code,
             si.custom_zatca_export_invoice AS invoice_export_flag,
+            si.currency AS currency,
             stct.tax_category AS template_tax_category,
-            tc.custom_zatca_category AS template_zatca_category,
-            sii.name AS item_name,
-            COALESCE(sii.base_amount, sii.amount, 0) AS item_amount,
-            COALESCE(sii.base_net_amount, sii.net_amount, sii.amount, 0) AS item_net_amount,
-            sii.item_tax_template AS item_tax_template,
-            itt.custom_zatca_tax_category AS item_template_category,
-            itt.custom_exemption_reason_code AS item_template_exemption_code,
-            tax.tax_rate AS item_template_first_tax_rate
+            tc.custom_zatca_category AS template_zatca_category
         FROM `tabSales Invoice` si
         LEFT JOIN `tabSales Taxes and Charges Template` stct ON stct.name = si.taxes_and_charges
         LEFT JOIN `tabTax Category` tc ON tc.name = stct.tax_category
-        LEFT JOIN `tabSales Invoice Item` sii ON sii.parent = si.name
-        LEFT JOIN `tabItem Tax Template` itt ON itt.name = sii.item_tax_template
-        LEFT JOIN `tabItem Tax Template Detail` tax ON tax.parent = itt.name AND tax.idx = 1
         WHERE {where_clause}
     """
 
     rows = frappe.db.sql(query, filters, as_dict=True)
 
-    # Group rows by invoice
-    invoices = {}
     for r in rows:
-        inv = r.get("invoice")
-        if inv not in invoices:
-            invoices[inv] = {
-                "is_return": bool(r.get("is_return")),
-                "is_debit_note": bool(r.get("is_debit_note")),
-                "grand_total": r.get("grand_total") or 0,
-                "total_taxes_and_charges": r.get("total_taxes_and_charges") or 0,
-                "taxes_and_charges_template": r.get("taxes_and_charges_template") or "",
-                "template_zatca_category": r.get("template_zatca_category") or "",
-                "custom_zatca_tax_category": r.get("invoice_zatca_cat"),
-                "custom_exemption_reason_code": r.get("invoice_exemption_code"),
-                "custom_zatca_export_invoice": r.get("invoice_export_flag") or 0,
-                "items": []
-            }
-        if r.get("item_name"):
-            invoices[inv]["items"].append({
-                "amount": r.get("item_amount") or 0,
-                "net_amount": r.get("item_net_amount") or 0,
-                "item_tax_template": r.get("item_tax_template"),
-                "template_category": r.get("item_template_category"),
-                "template_exemption_code": r.get("item_template_exemption_code"),
-                "tax_rate": r.get("item_template_first_tax_rate") or 0,
-            })
+        is_return = bool(r.get("is_return"))
 
-    # Process invoices
-    for inv_doc in invoices.values():
-        is_return = bool(inv_doc["is_return"])
-
-        grand_total = abs(inv_doc["grand_total"] or 0)
-        vat_amount = abs(inv_doc["total_taxes_and_charges"] or 0)
-        # Net amount is the taxable base (before VAT)
-        net_amount = grand_total - vat_amount
+        # Amount = gross amount (including VAT)
+        gross_amount = abs(r.get("grand_total") or 0)
+        vat_amount = abs(r.get("total_taxes_and_charges") or 0)
+        currency = r.get("currency") or "SAR"
 
         # Get ZATCA category from Tax Template -> Tax Category
-        template_zatca_cat = get_zatca_category_from_template(inv_doc.get("template_zatca_category"))
-
-        def calculate_item_vat(item):
-            return (item.get("net_amount") or 0) * (item.get("tax_rate") or 0) / 100.0
+        template_zatca_cat = get_zatca_category_from_template(r.get("template_zatca_category"))
 
         # Determine which fields to update
         if is_return:
@@ -647,58 +614,29 @@ def get_sales_vat_totals_sql(filters):
             vat_key = "vat"
 
         # Check if it's an export first (exports are zero-rated, no VAT)
-        if int(inv_doc.get("custom_zatca_export_invoice") or 0) == 1:
-            totals["Exports"][amount_key] += net_amount
-            # Exports have 0 VAT - don't add VAT
+        if int(r.get("custom_zatca_export_invoice") or 0) == 1:
+            totals["Exports"][amount_key] += gross_amount
             continue
 
         # Priority: Tax Template's Tax Category ZATCA category > Invoice ZATCA category
-        effective_zatca_cat = template_zatca_cat or inv_doc.get("custom_zatca_tax_category")
+        effective_zatca_cat = template_zatca_cat or r.get("invoice_zatca_cat")
 
-        # If no category is determined BUT the invoice has 0 tax, treat as Zero Rated
-        if not effective_zatca_cat and vat_amount == 0 and grand_total > 0:
-            effective_zatca_cat = "Zero Rated"
+        # Skip SAR invoices with 0 VAT - they should not be included in the report
+        if currency == "SAR" and vat_amount == 0 and gross_amount > 0:
+            continue
 
-        # If category is "Standard" but there's no VAT on invoice, treat as Zero Rated
-        if effective_zatca_cat == "Standard" and vat_amount == 0 and net_amount > 0:
-            effective_zatca_cat = "Zero Rated"
+        # Non-SAR invoices with 0 VAT go to Exports (Box 4)
+        if currency != "SAR" and vat_amount == 0 and gross_amount > 0:
+            totals["Exports"][amount_key] += gross_amount
+            continue
 
-        # --- Zero Rated ---
-        if effective_zatca_cat == "Zero Rated":
-            totals["Zero Rated"][amount_key] += net_amount
-        # --- Standard Rated ---
-        elif effective_zatca_cat == "Standard":
-            totals["Standard"][amount_key] += net_amount
+        # --- Standard Rated (has VAT) ---
+        if vat_amount > 0:
+            totals["Standard"][amount_key] += gross_amount
             totals["Standard"][vat_key] += vat_amount
         # --- Exempted ---
         elif effective_zatca_cat == "Exempted":
-            totals["Exempt"][amount_key] += net_amount
-        else:
-            # Item-level processing if no invoice-level category
-            has_items = len(inv_doc["items"]) > 0
-            if has_items:
-                for item in inv_doc["items"]:
-                    item_amount = abs(item.get("net_amount") or item.get("amount") or 0)
-                    item_vat = abs(calculate_item_vat(item))
-
-                    if item.get("template_category") == "Zero Rated":
-                        totals["Zero Rated"][amount_key] += item_amount
-                    elif item.get("template_category") == "Standard":
-                        if item.get("tax_rate", 0) == 0:
-                            totals["Zero Rated"][amount_key] += item_amount
-                        else:
-                            totals["Standard"][amount_key] += item_amount
-                            totals["Standard"][vat_key] += item_vat
-                    elif item.get("template_category") == "Exempted":
-                        totals["Exempt"][amount_key] += item_amount
-            else:
-                # No items and no category - check if 0 tax means Zero Rated
-                if vat_amount == 0 and net_amount > 0:
-                    totals["Zero Rated"][amount_key] += net_amount
-                elif vat_amount > 0:
-                    # Default to Standard if there's tax
-                    totals["Standard"][amount_key] += net_amount
-                    totals["Standard"][vat_key] += vat_amount
+            totals["Exempt"][amount_key] += gross_amount
 
     return totals
 
@@ -707,6 +645,13 @@ def get_sales_vat_totals_sql(filters):
 # PURCHASE VAT
 # -----------------------------
 def get_purchase_vat_totals_sql(filters):
+    """
+    Get purchase VAT totals.
+    - Amount = gross amount (including VAT) = base_grand_total
+    - VAT = tax amount = base_total_taxes_and_charges
+    - SAR invoices with 0 VAT = skip (ignore)
+    - Non-SAR invoices = Imports Reverse Charge (Box 9)
+    """
     totals = {
         "Standard": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
         "ImportsCustoms": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
@@ -742,10 +687,10 @@ def get_purchase_vat_totals_sql(filters):
     for r in rows:
         is_return = bool(r.get("is_return"))
 
-        grand_total = abs(r.get("grand_total") or 0)
+        # Amount = gross amount (including VAT)
+        gross_amount = abs(r.get("grand_total") or 0)
         vat_amount = abs(r.get("total_taxes_and_charges") or 0)
-        # Net amount is the taxable base (before VAT)
-        net_amount = grand_total - vat_amount
+        currency = r.get("currency") or "SAR"
 
         # Get ZATCA category from Tax Template -> Tax Category
         template_zatca_cat = get_zatca_category_from_template(r.get("template_zatca_category"))
@@ -762,44 +707,23 @@ def get_purchase_vat_totals_sql(filters):
 
         if is_import:
             # Import invoice - VAT paid at customs
-            totals["ImportsCustoms"][amount_key] += net_amount
+            totals["ImportsCustoms"][amount_key] += gross_amount
             totals["ImportsCustoms"][vat_key] += vat_amount
             continue
 
-        # Priority: Tax Template's Tax Category ZATCA category > Invoice ZATCA category
-        effective_zatca_cat = template_zatca_cat or r.get("custom_zatca_tax_category")
-
-        # Get currency
-        currency = r.get("currency") or "SAR"
-
         # Skip SAR purchases with 0 VAT - they should not be included in the report
-        if currency == "SAR" and vat_amount == 0 and net_amount > 0:
+        if currency == "SAR" and vat_amount == 0 and gross_amount > 0:
             continue
 
-        # If no category is determined BUT the invoice has 0 tax and currency is NOT SAR, treat as Imports Reverse Charge
-        if not effective_zatca_cat and vat_amount == 0 and net_amount > 0 and currency != "SAR":
-            effective_zatca_cat = "ImportsReverseCharge"
+        # Non-SAR purchases go to Imports Reverse Charge (Box 9)
+        if currency != "SAR":
+            totals["ImportsReverseCharge"][amount_key] += gross_amount
+            totals["ImportsReverseCharge"][vat_key] += vat_amount
+            continue
 
-        # If category is "Standard" but there's no VAT on invoice and currency is NOT SAR, treat as Imports Reverse Charge
-        # (imports from outside Saudi Arabia with reverse charge mechanism)
-        if effective_zatca_cat == "Standard" and vat_amount == 0 and net_amount > 0 and currency != "SAR":
-            effective_zatca_cat = "ImportsReverseCharge"
-
-        # If Zero Rated and currency is NOT SAR, move to Imports Reverse Charge
-        if effective_zatca_cat == "Zero Rated" and currency != "SAR":
-            totals["ImportsReverseCharge"][amount_key] += net_amount
-        elif effective_zatca_cat == "Zero Rated":
-            totals["Zero Rated"][amount_key] += net_amount
-        elif effective_zatca_cat == "ImportsReverseCharge":
-            totals["ImportsReverseCharge"][amount_key] += net_amount
-        elif effective_zatca_cat == "Standard":
-            totals["Standard"][amount_key] += net_amount
-            totals["Standard"][vat_key] += vat_amount
-        elif effective_zatca_cat == "Exempted":
-            totals["Exempt"][amount_key] += net_amount
-        elif vat_amount > 0:
-            # No category but has tax - treat as Standard
-            totals["Standard"][amount_key] += net_amount
+        # SAR purchases with VAT go to Standard (Box 7)
+        if vat_amount > 0:
+            totals["Standard"][amount_key] += gross_amount
             totals["Standard"][vat_key] += vat_amount
 
     return totals
