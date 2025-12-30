@@ -151,9 +151,9 @@ doctype_js = {"Sales Invoice": "public/js/sales_invoice.js"}
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Salary Slip": "expenses_management.overrides.salary_slip.CustomSalarySlip"
+}
 
 # Document Events
 # ---------------
@@ -227,6 +227,9 @@ doc_events = {
 # ----------------
 # before_request = ["expenses_management.utils.before_request"]
 # after_request = ["expenses_management.utils.after_request"]
+
+# Apply HRMS leave fixes on each request
+before_request = ["expenses_management.overrides.leave_fixes.apply_leave_fixes"]
 
 # Job Events
 # ----------
