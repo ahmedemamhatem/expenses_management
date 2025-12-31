@@ -9,10 +9,10 @@ from frappe.utils import today, getdate, flt, cint
 @frappe.whitelist()
 def get_filter_options():
     """Get options for report filters using cached queries"""
-    
+
     companies = frappe.db.get_list("Company", pluck="name", cache=True)
     branches = frappe.db.get_list("Branch", pluck="name", cache=True)
-    
+
     customers = frappe.db.get_list(
         "Customer",
         filters={"disabled": 0},
@@ -20,43 +20,51 @@ def get_filter_options():
         order_by="customer_name",
         cache=True
     )
-    
+
     pos_profiles = frappe.db.get_list(
         "POS Profile",
         filters={"disabled": 0},
         pluck="name",
         cache=True
     )
-    
+
+    customer_groups = frappe.db.get_list("Customer Group", pluck="name", cache=True)
+    territories = frappe.db.get_list("Territory", pluck="name", cache=True)
+    sales_persons = frappe.db.get_list("Sales Person", pluck="name", cache=True)
+
     return {
         "companies": companies,
         "branches": branches,
         "customers": customers,
-        "pos_profiles": pos_profiles
+        "pos_profiles": pos_profiles,
+        "customer_groups": customer_groups,
+        "territories": territories,
+        "sales_persons": sales_persons
     }
 
 
 @frappe.whitelist()
-def get_report_data(company, from_date=None, to_date=None, branch=None, customer=None, pos_profile=None):
+def get_report_data(company, from_date=None, to_date=None, branch=None, customer=None, pos_profile=None,
+                    customer_group=None, territory=None, sales_person=None):
     """Get customer analysis report data"""
-    
+
     if not company:
         frappe.throw(_("Company is required"))
-    
+
     if not from_date:
         from_date = today()
     if not to_date:
         to_date = today()
-    
+
     from_date = getdate(from_date)
     to_date = getdate(to_date)
-    
+
     values = {
         "company": company,
         "from_date": from_date,
         "to_date": to_date
     }
-    
+
     extra_conditions = []
     if branch:
         extra_conditions.append("si.branch = %(branch)s")
@@ -67,31 +75,315 @@ def get_report_data(company, from_date=None, to_date=None, branch=None, customer
     if pos_profile:
         extra_conditions.append("si.pos_profile = %(pos_profile)s")
         values["pos_profile"] = pos_profile
-    
+    if customer_group:
+        extra_conditions.append("c.customer_group = %(customer_group)s")
+        values["customer_group"] = customer_group
+    if territory:
+        extra_conditions.append("c.territory = %(territory)s")
+        values["territory"] = territory
+    if sales_person:
+        extra_conditions.append("EXISTS (SELECT 1 FROM `tabSales Team` st WHERE st.parent = si.name AND st.sales_person = %(sales_person)s)")
+        values["sales_person"] = sales_person
+
     extra_where = (" AND " + " AND ".join(extra_conditions)) if extra_conditions else ""
-    
+
     customers_data = get_customers_analysis_optimized(values, extra_where)
-    
+
+    # Calculate previous period for comparison
+    period_days = (to_date - from_date).days + 1
+    prev_to_date = from_date - frappe.utils.datetime.timedelta(days=1)
+    prev_from_date = prev_to_date - frappe.utils.datetime.timedelta(days=period_days - 1)
+
+    # Get summary data for current and previous period
+    summary = get_summary_data(company, from_date, to_date, extra_where, values)
+    prev_summary = get_summary_data(company, prev_from_date, prev_to_date, extra_where, {**values, "from_date": prev_from_date, "to_date": prev_to_date})
+
+    # Calculate growth percentages
+    growth = calculate_growth(summary, prev_summary)
+
+    # Get top item groups for chart
+    top_item_groups = get_top_item_groups_for_chart(company, from_date, to_date, extra_where, values)
+
+    # Get daily sales trend for chart
+    daily_sales_trend = get_daily_sales_trend(company, from_date, to_date, extra_where, values)
+
+    # Get alerts and insights
+    alerts = get_alerts_and_insights(customers_data, summary)
+
     return {
         "customers": customers_data,
+        "summary": summary,
+        "prev_summary": prev_summary,
+        "growth": growth,
+        "top_item_groups": top_item_groups,
+        "daily_sales_trend": daily_sales_trend,
+        "alerts": alerts,
         "filters": {
             "company": company,
             "from_date": str(from_date),
             "to_date": str(to_date),
             "branch": branch,
             "customer": customer,
-            "pos_profile": pos_profile
+            "pos_profile": pos_profile,
+            "customer_group": customer_group,
+            "territory": territory,
+            "sales_person": sales_person
         }
     }
 
 
+def get_summary_data(company, from_date, to_date, extra_where, values):
+    """Get summary statistics for the period"""
+    summary_values = {
+        "company": company,
+        "from_date": from_date,
+        "to_date": to_date
+    }
+    # Copy extra filter values
+    for key in ["branch", "customer", "pos_profile", "customer_group", "territory", "sales_person"]:
+        if key in values:
+            summary_values[key] = values[key]
+
+    # Replace extra_where with customer join for customer_group/territory filters
+    customer_join = ""
+    filtered_extra_where = extra_where
+    if "customer_group" in values or "territory" in values:
+        customer_join = "LEFT JOIN `tabCustomer` c ON c.name = si.customer"
+        # No need to modify extra_where as it already has correct conditions
+
+    result = frappe.db.sql(f"""
+        SELECT
+            COUNT(DISTINCT si.customer) as total_customers,
+            COUNT(DISTINCT CASE WHEN si.is_return = 0 THEN si.name END) as total_invoices,
+            COUNT(DISTINCT CASE WHEN si.is_return = 1 THEN si.name END) as total_returns,
+            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN si.base_grand_total ELSE 0 END), 0) as total_sales,
+            COALESCE(SUM(CASE WHEN si.is_return = 1 THEN ABS(si.base_grand_total) ELSE 0 END), 0) as total_returns_amount,
+            COALESCE(SUM(si.base_grand_total), 0) as net_sales
+        FROM `tabSales Invoice` si
+        {customer_join}
+        WHERE si.docstatus = 1
+        AND si.company = %(company)s
+        AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+        {filtered_extra_where}
+    """, summary_values, as_dict=1)
+
+    summary = result[0] if result else {}
+
+    # Get profit data
+    profit_result = frappe.db.sql(f"""
+        SELECT
+            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.base_net_amount ELSE -sii.base_net_amount END), 0) as total_revenue,
+            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * sii.incoming_rate ELSE -sii.stock_qty * sii.incoming_rate END), 0) as total_cost
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        {customer_join}
+        WHERE si.docstatus = 1
+        AND si.company = %(company)s
+        AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+        {filtered_extra_where}
+    """, summary_values, as_dict=1)
+
+    profit_data = profit_result[0] if profit_result else {}
+    summary["total_profit"] = flt(profit_data.get("total_revenue", 0)) - flt(profit_data.get("total_cost", 0))
+    summary["total_cost"] = flt(profit_data.get("total_cost", 0))
+
+    # Calculate averages
+    if flt(summary.get("total_invoices", 0)) > 0:
+        summary["avg_order_value"] = flt(summary.get("total_sales", 0)) / flt(summary.get("total_invoices"))
+    else:
+        summary["avg_order_value"] = 0
+
+    if flt(summary.get("total_sales", 0)) > 0:
+        summary["profit_margin"] = (flt(summary.get("total_profit", 0)) / flt(summary.get("total_sales", 0))) * 100
+    else:
+        summary["profit_margin"] = 0
+
+    return summary
+
+
+def calculate_growth(current, previous):
+    """Calculate growth percentages between two periods"""
+    growth = {}
+
+    metrics = ["total_customers", "total_invoices", "total_sales", "total_profit", "avg_order_value"]
+    for metric in metrics:
+        curr_val = flt(current.get(metric, 0))
+        prev_val = flt(previous.get(metric, 0))
+
+        if prev_val > 0:
+            growth[metric] = ((curr_val - prev_val) / prev_val) * 100
+        elif curr_val > 0:
+            growth[metric] = 100
+        else:
+            growth[metric] = 0
+
+    return growth
+
+
+def get_top_item_groups_for_chart(company, from_date, to_date, extra_where, values):
+    """Get top item groups for pie chart"""
+    chart_values = {
+        "company": company,
+        "from_date": from_date,
+        "to_date": to_date
+    }
+    for key in ["branch", "customer", "pos_profile", "customer_group", "territory", "sales_person"]:
+        if key in values:
+            chart_values[key] = values[key]
+
+    customer_join = ""
+    if "customer_group" in values or "territory" in values:
+        customer_join = "LEFT JOIN `tabCustomer` c ON c.name = si.customer"
+
+    result = frappe.db.sql(f"""
+        SELECT
+            COALESCE(i.item_group, 'غير محدد') as item_group,
+            ROUND(SUM(sii.base_net_amount), 2) as total_amount,
+            COUNT(*) as item_count
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        LEFT JOIN `tabItem` i ON i.name = sii.item_code
+        {customer_join}
+        WHERE si.docstatus = 1
+        AND si.company = %(company)s
+        AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+        AND si.is_return = 0
+        {extra_where}
+        GROUP BY i.item_group
+        ORDER BY total_amount DESC
+        LIMIT 10
+    """, chart_values, as_dict=1)
+
+    return result
+
+
+def get_daily_sales_trend(company, from_date, to_date, extra_where, values):
+    """Get daily sales trend for line chart"""
+    trend_values = {
+        "company": company,
+        "from_date": from_date,
+        "to_date": to_date
+    }
+    for key in ["branch", "customer", "pos_profile", "customer_group", "territory", "sales_person"]:
+        if key in values:
+            trend_values[key] = values[key]
+
+    customer_join = ""
+    if "customer_group" in values or "territory" in values:
+        customer_join = "LEFT JOIN `tabCustomer` c ON c.name = si.customer"
+
+    result = frappe.db.sql(f"""
+        SELECT
+            si.posting_date as date,
+            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN si.base_grand_total ELSE 0 END), 0) as sales,
+            COALESCE(SUM(CASE WHEN si.is_return = 1 THEN ABS(si.base_grand_total) ELSE 0 END), 0) as returns,
+            COUNT(DISTINCT CASE WHEN si.is_return = 0 THEN si.name END) as invoice_count
+        FROM `tabSales Invoice` si
+        {customer_join}
+        WHERE si.docstatus = 1
+        AND si.company = %(company)s
+        AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+        {extra_where}
+        GROUP BY si.posting_date
+        ORDER BY si.posting_date
+    """, trend_values, as_dict=1)
+
+    # Convert dates to strings for JSON
+    for row in result:
+        row["date"] = str(row["date"])
+
+    return result
+
+
+def get_alerts_and_insights(customers_data, summary):
+    """Generate alerts and insights based on data"""
+    alerts = []
+
+    # Find customers with declining sales (compare period to all-time average)
+    declining_customers = []
+    for c in customers_data:
+        if c.get("invoice_count_all_time", 0) > 1:
+            avg_per_invoice = flt(c.get("total_purchase_all_time", 0)) / max(c.get("invoice_count_all_time", 1), 1)
+            period_avg = flt(c.get("total_purchase_period", 0)) / max(c.get("invoice_count_period", 1), 1)
+            if avg_per_invoice > 0 and period_avg < avg_per_invoice * 0.7:  # 30% decline
+                declining_customers.append({
+                    "customer": c.get("customer_name"),
+                    "decline_pct": round((1 - period_avg / avg_per_invoice) * 100)
+                })
+
+    if declining_customers:
+        alerts.append({
+            "type": "warning",
+            "icon": "fa-exclamation-triangle",
+            "title": "عملاء متراجعون",
+            "message": f"{len(declining_customers)} عميل انخفض معدل شرائهم بنسبة كبيرة",
+            "details": declining_customers[:5]
+        })
+
+    # Find customers with overdue payments
+    overdue_customers = [c for c in customers_data if flt(c.get("total_due", 0)) > 0]
+    total_overdue = sum(flt(c.get("total_due", 0)) for c in overdue_customers)
+    if overdue_customers:
+        alerts.append({
+            "type": "danger",
+            "icon": "fa-clock-o",
+            "title": "مستحقات متأخرة",
+            "message": f"{len(overdue_customers)} عميل لديهم مستحقات متأخرة بإجمالي {round(total_overdue, 2):,.2f}",
+            "details": sorted(overdue_customers, key=lambda x: -flt(x.get("total_due", 0)))[:5]
+        })
+
+    # Top profitable customers
+    profitable_customers = sorted(customers_data, key=lambda x: -flt(x.get("revenue_period", 0)))[:5]
+    if profitable_customers and flt(profitable_customers[0].get("revenue_period", 0)) > 0:
+        alerts.append({
+            "type": "success",
+            "icon": "fa-trophy",
+            "title": "أفضل العملاء ربحية",
+            "message": f"أفضل 5 عملاء حققوا أرباح بإجمالي {sum(flt(c.get('revenue_period', 0)) for c in profitable_customers):,.2f}",
+            "details": [{"customer": c.get("customer_name"), "profit": flt(c.get("revenue_period", 0))} for c in profitable_customers]
+        })
+
+    # New customers (first invoice in this period matches period dates)
+    new_customers = [c for c in customers_data if c.get("invoice_count_all_time", 0) == c.get("invoice_count_period", 0)]
+    if new_customers:
+        alerts.append({
+            "type": "info",
+            "icon": "fa-user-plus",
+            "title": "عملاء جدد",
+            "message": f"{len(new_customers)} عميل جديد في هذه الفترة",
+            "details": [{"customer": c.get("customer_name"), "purchase": flt(c.get("total_purchase_period", 0))} for c in new_customers[:5]]
+        })
+
+    # High volume customers
+    high_volume = sorted(customers_data, key=lambda x: -flt(x.get("total_purchase_period", 0)))[:3]
+    if high_volume and flt(high_volume[0].get("total_purchase_period", 0)) > 0:
+        total_high_volume = sum(flt(c.get("total_purchase_period", 0)) for c in high_volume)
+        total_period = flt(summary.get("total_sales", 0))
+        if total_period > 0:
+            pct = (total_high_volume / total_period) * 100
+            alerts.append({
+                "type": "primary",
+                "icon": "fa-star",
+                "title": "تركز المبيعات",
+                "message": f"أعلى 3 عملاء يمثلون {pct:.1f}% من إجمالي المبيعات",
+                "details": [{"customer": c.get("customer_name"), "purchase": flt(c.get("total_purchase_period", 0))} for c in high_volume]
+            })
+
+    return alerts
+
+
 def get_customers_analysis_optimized(values, extra_where):
     """Get detailed analysis for all customers using batch queries"""
-    
+
     company = values["company"]
     from_date = values["from_date"]
     to_date = values["to_date"]
-    
+
+    # Add customer join if filtering by customer_group or territory
+    customer_join = ""
+    if "customer_group" in values or "territory" in values:
+        customer_join = "LEFT JOIN `tabCustomer` c ON c.name = si.customer"
+
     # BATCH 1: Get all customers with period totals
     period_data = frappe.db.sql(f"""
         SELECT
@@ -101,6 +393,7 @@ def get_customers_analysis_optimized(values, extra_where):
             COUNT(CASE WHEN si.is_return = 0 THEN 1 END) as period_invoice_count,
             COUNT(CASE WHEN si.is_return = 1 THEN 1 END) as period_return_count
         FROM `tabSales Invoice` si
+        {customer_join}
         WHERE si.docstatus = 1
         AND si.company = %(company)s
         AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
