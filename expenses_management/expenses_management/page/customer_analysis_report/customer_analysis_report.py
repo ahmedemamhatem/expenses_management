@@ -188,7 +188,83 @@ def get_customers_analysis_optimized(values, extra_where):
     
     # BATCH 6: Get all items
     items_data = get_all_customer_items_batch(values, extra_where, customer_list)
-    
+
+    # BATCH 7: Get top item groups per customer
+    top_item_groups = frappe.db.sql(f"""
+        SELECT
+            si.customer,
+            i.item_group,
+            COUNT(*) as item_count,
+            ROUND(SUM(sii.base_net_amount), 2) as group_amount
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        LEFT JOIN `tabItem` i ON i.name = sii.item_code
+        WHERE si.docstatus = 1
+        AND si.company = %(company)s
+        AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+        AND si.customer IN %(customers)s
+        AND si.is_return = 0
+        {extra_where}
+        GROUP BY si.customer, i.item_group
+        ORDER BY si.customer, group_amount DESC
+    """, {**values, "customers": customer_list}, as_dict=1)
+
+    # Map top item group per customer
+    top_group_map = {}
+    for row in top_item_groups:
+        if row.customer not in top_group_map:
+            top_group_map[row.customer] = {
+                "item_group": row.item_group or "غير محدد",
+                "item_count": row.item_count,
+                "group_amount": row.group_amount
+            }
+
+    # BATCH 8: Get first and last invoice dates per customer
+    invoice_dates = frappe.db.sql("""
+        SELECT
+            si.customer,
+            MIN(si.posting_date) as first_invoice_date,
+            MAX(si.posting_date) as last_invoice_date
+        FROM `tabSales Invoice` si
+        WHERE si.docstatus = 1
+        AND si.company = %(company)s
+        AND si.customer IN %(customers)s
+        AND si.is_return = 0
+        GROUP BY si.customer
+    """, {"company": company, "customers": customer_list}, as_dict=1)
+
+    invoice_dates_map = {d.customer: d for d in invoice_dates}
+
+    # BATCH 9: Get last invoice details per customer (amount and profit)
+    last_invoice_details = frappe.db.sql("""
+        SELECT
+            si.customer,
+            si.name as last_invoice_id,
+            si.posting_date as last_invoice_date,
+            si.base_grand_total as last_invoice_amount,
+            COALESCE(
+                (SELECT SUM(sii.base_net_amount - (sii.stock_qty * sii.incoming_rate))
+                 FROM `tabSales Invoice Item` sii
+                 WHERE sii.parent = si.name), 0
+            ) as last_invoice_profit
+        FROM `tabSales Invoice` si
+        INNER JOIN (
+            SELECT customer, MAX(posting_date) as max_date
+            FROM `tabSales Invoice`
+            WHERE docstatus = 1
+            AND company = %(company)s
+            AND customer IN %(customers)s
+            AND is_return = 0
+            GROUP BY customer
+        ) latest ON si.customer = latest.customer AND si.posting_date = latest.max_date
+        WHERE si.docstatus = 1
+        AND si.company = %(company)s
+        AND si.is_return = 0
+        GROUP BY si.customer
+    """, {"company": company, "customers": customer_list}, as_dict=1)
+
+    last_invoice_map = {d.customer: d for d in last_invoice_details}
+
     # Build result
     result = []
     for pd in period_data:
@@ -203,7 +279,22 @@ def get_customers_analysis_optimized(values, extra_where):
         
         all_time_revenue_value = flt(atr.get("net_sales", 0)) - flt(atr.get("cost_of_goods", 0))
         period_revenue_value = flt(pr.get("net_sales", 0)) - flt(pr.get("cost_of_goods", 0))
-        
+
+        # Get top item group for this customer
+        top_group = top_group_map.get(cust, {})
+
+        # Get invoice dates for this customer
+        inv_dates = invoice_dates_map.get(cust, {})
+
+        # Get last invoice details
+        last_inv = last_invoice_map.get(cust, {})
+
+        # Calculate total weight sold in period
+        cust_items = items_data.get(cust, [])
+        total_weight_tons = sum(flt(item.get("weight_in_tons", 0)) for item in cust_items)
+        total_items_count = len(cust_items)
+        unique_items_count = len(set(item.get("item_code") for item in cust_items if item.get("item_code")))
+
         result.append({
             "customer": cust,
             "customer_name": customer_names.get(cust, cust),
@@ -217,7 +308,17 @@ def get_customers_analysis_optimized(values, extra_where):
             "return_count_all_time": cint(at.get("all_time_return_count", 0)),
             "invoice_count_period": cint(pd.period_invoice_count),
             "return_count_period": cint(pd.period_return_count),
-            "items": items_data.get(cust, [])
+            "top_item_group": top_group.get("item_group", ""),
+            "top_group_amount": flt(top_group.get("group_amount", 0)),
+            "first_invoice_date": str(inv_dates.get("first_invoice_date", "")) if inv_dates.get("first_invoice_date") else "",
+            "last_invoice_date": str(inv_dates.get("last_invoice_date", "")) if inv_dates.get("last_invoice_date") else "",
+            "last_invoice_id": last_inv.get("last_invoice_id", ""),
+            "last_invoice_amount": flt(last_inv.get("last_invoice_amount", 0)),
+            "last_invoice_profit": flt(last_inv.get("last_invoice_profit", 0)),
+            "total_weight_tons": flt(total_weight_tons, 3),
+            "total_items_count": total_items_count,
+            "unique_items_count": unique_items_count,
+            "items": cust_items
         })
     
     result.sort(key=lambda x: x.get("customer_name", ""))

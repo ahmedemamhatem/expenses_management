@@ -61,8 +61,30 @@ class CustomerAnalysisReport {
 		}
 
 		this.settings_dialog = new frappe.ui.Dialog({
-			title: 'إعدادات التقرير',
+			title: '<i class="fa fa-filter"></i> إعدادات التقرير',
 			fields: [
+				{
+					fieldtype: 'HTML',
+					fieldname: 'date_presets_html',
+					options: `
+						<div class="filter-presets">
+							<div class="preset-label"><i class="fa fa-clock-o"></i> اختيار سريع للتاريخ:</div>
+							<div class="preset-buttons">
+								<button type="button" class="preset-btn" data-preset="today">اليوم</button>
+								<button type="button" class="preset-btn" data-preset="yesterday">أمس</button>
+								<button type="button" class="preset-btn" data-preset="this_week">هذا الأسبوع</button>
+								<button type="button" class="preset-btn" data-preset="last_week">الأسبوع الماضي</button>
+								<button type="button" class="preset-btn" data-preset="this_month">هذا الشهر</button>
+								<button type="button" class="preset-btn" data-preset="last_month">الشهر الماضي</button>
+								<button type="button" class="preset-btn" data-preset="this_year">هذه السنة</button>
+							</div>
+						</div>
+					`
+				},
+				{
+					fieldtype: 'Section Break',
+					label: '<i class="fa fa-building"></i> بيانات الشركة'
+				},
 				{
 					label: __('الشركة'),
 					fieldname: 'company',
@@ -86,7 +108,8 @@ class CustomerAnalysisReport {
 					default: me.filters.branch
 				},
 				{
-					fieldtype: 'Section Break'
+					fieldtype: 'Section Break',
+					label: '<i class="fa fa-calendar"></i> الفترة الزمنية'
 				},
 				{
 					label: __('من تاريخ'),
@@ -106,7 +129,8 @@ class CustomerAnalysisReport {
 					reqd: 1
 				},
 				{
-					fieldtype: 'Section Break'
+					fieldtype: 'Section Break',
+					label: '<i class="fa fa-filter"></i> فلاتر إضافية'
 				},
 				{
 					label: __('العميل'),
@@ -133,7 +157,7 @@ class CustomerAnalysisReport {
 				}
 			],
 			size: 'large',
-			primary_action_label: 'عرض التقرير',
+			primary_action_label: '<i class="fa fa-search"></i> عرض التقرير',
 			primary_action: function(values) {
 				me.filters = values;
 				me.settings_dialog.hide();
@@ -141,7 +165,57 @@ class CustomerAnalysisReport {
 			}
 		});
 
-		// Style the primary button to be larger
+		// Add custom styles for the dialog
+		this.settings_dialog.$wrapper.find('.modal-content').css({
+			'border-radius': '16px',
+			'overflow': 'hidden',
+			'box-shadow': '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+		});
+
+		this.settings_dialog.$wrapper.find('.modal-header').css({
+			'background': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+			'color': '#fff',
+			'border-bottom': 'none',
+			'padding': '20px 24px'
+		});
+
+		this.settings_dialog.$wrapper.find('.modal-title').css({
+			'font-size': '20px',
+			'font-weight': '800'
+		});
+
+		this.settings_dialog.$wrapper.find('.btn-modal-close').css({
+			'color': '#fff',
+			'opacity': '0.8'
+		});
+
+		this.settings_dialog.$wrapper.find('.modal-body').css({
+			'padding': '24px',
+			'background': '#f8fafc'
+		});
+
+		this.settings_dialog.$wrapper.find('.section-head').css({
+			'font-size': '14px',
+			'font-weight': '700',
+			'color': '#4f46e5',
+			'margin-bottom': '16px',
+			'padding-bottom': '8px',
+			'border-bottom': '2px solid #e0e7ff'
+		});
+
+		this.settings_dialog.$wrapper.find('.frappe-control').css({
+			'margin-bottom': '12px'
+		});
+
+		this.settings_dialog.$wrapper.find('.form-control').css({
+			'border-radius': '8px',
+			'border': '2px solid #e2e8f0',
+			'padding': '10px 14px',
+			'font-size': '14px',
+			'transition': 'all 0.2s ease'
+		});
+
+		// Style the primary button
 		this.settings_dialog.$wrapper.find('.btn-primary').css({
 			'font-size': '18px',
 			'padding': '14px 50px',
@@ -150,6 +224,70 @@ class CustomerAnalysisReport {
 			'background': 'linear-gradient(135deg, #6366f1, #8b5cf6)',
 			'border': 'none',
 			'box-shadow': '0 4px 15px rgba(99, 102, 241, 0.4)'
+		});
+
+		// Add preset button styles
+		const presetStyles = `
+			<style>
+				.filter-presets {
+					background: linear-gradient(135deg, #eef2ff 0%, #faf5ff 100%);
+					border-radius: 12px;
+					padding: 16px;
+					margin-bottom: 8px;
+					border: 2px solid #e0e7ff;
+				}
+				.preset-label {
+					font-size: 13px;
+					font-weight: 700;
+					color: #4f46e5;
+					margin-bottom: 12px;
+					display: flex;
+					align-items: center;
+					gap: 8px;
+				}
+				.preset-buttons {
+					display: flex;
+					flex-wrap: wrap;
+					gap: 8px;
+				}
+				.preset-btn {
+					background: #fff;
+					border: 2px solid #c7d2fe;
+					color: #4f46e5;
+					padding: 8px 16px;
+					border-radius: 8px;
+					font-size: 13px;
+					font-weight: 600;
+					cursor: pointer;
+					transition: all 0.2s ease;
+				}
+				.preset-btn:hover {
+					background: linear-gradient(135deg, #6366f1, #8b5cf6);
+					color: #fff;
+					border-color: #6366f1;
+					transform: translateY(-2px);
+					box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+				}
+				.preset-btn.active {
+					background: linear-gradient(135deg, #6366f1, #8b5cf6);
+					color: #fff;
+					border-color: #6366f1;
+				}
+			</style>
+		`;
+		this.settings_dialog.$wrapper.find('.modal-content').prepend(presetStyles);
+
+		// Add click handlers for preset buttons
+		this.settings_dialog.$wrapper.find('.preset-btn').on('click', (e) => {
+			const preset = $(e.target).data('preset');
+			const dates = this.get_preset_dates(preset);
+			if (dates) {
+				this.settings_dialog.set_value('from_date', dates.from_date);
+				this.settings_dialog.set_value('to_date', dates.to_date);
+				// Highlight active button
+				this.settings_dialog.$wrapper.find('.preset-btn').removeClass('active');
+				$(e.target).addClass('active');
+			}
 		});
 
 		this.settings_dialog.show();
@@ -366,6 +504,118 @@ class CustomerAnalysisReport {
 
 				.metric-val.pos { color: #059669 !important; }
 				.metric-val.neg { color: #dc2626 !important; }
+
+				/* ===== CUSTOMER CATEGORY TAG ===== */
+				.customer-category {
+					background: linear-gradient(135deg, #fbbf24, #f59e0b);
+					color: #78350f;
+					padding: 6px 14px;
+					border-radius: 20px;
+					font-size: 12px;
+					font-weight: 700;
+					display: flex;
+					align-items: center;
+					gap: 6px;
+					box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+				}
+
+				.customer-category i {
+					font-size: 11px;
+				}
+
+				/* ===== CUSTOMER INFO BAR ===== */
+				.customer-info-bar {
+					display: flex;
+					flex-wrap: wrap;
+					gap: 20px;
+					padding: 14px 24px;
+					background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+					border-bottom: 3px solid #6366f1;
+				}
+
+				.info-item {
+					display: flex;
+					align-items: center;
+					gap: 8px;
+					color: #94a3b8;
+					font-size: 13px;
+				}
+
+				.info-item i {
+					color: #6366f1;
+					font-size: 14px;
+				}
+
+				.info-item .info-label {
+					font-weight: 600;
+				}
+
+				.info-item .info-value {
+					color: #fff;
+					font-weight: 800;
+				}
+
+				.info-item .info-amount {
+					color: #10b981;
+					font-weight: 800;
+					font-size: 12px;
+				}
+
+				.info-item.highlight {
+					background: rgba(99, 102, 241, 0.2);
+					padding: 8px 16px;
+					border-radius: 8px;
+					border: 1px solid rgba(99, 102, 241, 0.3);
+				}
+
+				.info-item.highlight i {
+					color: #fbbf24;
+				}
+
+				.info-item.highlight .info-value {
+					color: #fbbf24;
+				}
+
+				/* Last Invoice Styling */
+				.info-item.last-inv {
+					background: rgba(16, 185, 129, 0.15);
+					padding: 8px 16px;
+					border-radius: 8px;
+					border: 1px solid rgba(16, 185, 129, 0.3);
+				}
+
+				.info-item.last-inv i {
+					color: #10b981;
+				}
+
+				.info-item.last-inv .info-value {
+					color: #10b981;
+					font-size: 15px;
+				}
+
+				.info-profit {
+					display: flex;
+					align-items: center;
+					gap: 4px;
+					padding: 4px 10px;
+					border-radius: 6px;
+					font-size: 12px;
+					font-weight: 800;
+				}
+
+				.info-profit.profit-pos {
+					background: rgba(16, 185, 129, 0.3);
+					color: #10b981;
+				}
+
+				.info-profit.profit-neg {
+					background: rgba(239, 68, 68, 0.3);
+					color: #ef4444;
+				}
+
+				.info-profit i {
+					font-size: 10px;
+				}
 
 				/* ===== ITEMS TABLE ===== */
 				.items-wrapper {
@@ -666,22 +916,28 @@ class CustomerAnalysisReport {
 				/* ===== RESPONSIVE ===== */
 				@media (max-width: 1200px) {
 					.metrics-row { grid-template-columns: repeat(3, 1fr); }
+					.customer-info-bar { justify-content: center; }
 				}
 
 				@media (max-width: 768px) {
 					.metrics-row { grid-template-columns: repeat(2, 1fr); }
 					.customer-card-header { flex-direction: column; gap: 10px; }
 					.customer-stats { flex-wrap: wrap; justify-content: center; }
+					.customer-main-info { flex-direction: column; text-align: center; }
+					.customer-info-bar { flex-direction: column; gap: 12px; align-items: flex-start; }
 				}
 
 				@media (max-width: 480px) {
 					.metrics-row { grid-template-columns: 1fr 1fr; }
+					.info-item { font-size: 12px; }
 				}
 
 				/* ===== PRINT ===== */
 				@media print {
 					.floating-gear-btn { display: none !important; }
 					.items-panel { display: block !important; }
+					.customer-info-bar { background: #f8fafc !important; color: #1e293b !important; }
+					.info-item, .info-item .info-label { color: #1e293b !important; }
 				}
 			</style>
 			<div class="customer-analysis-report">
@@ -769,6 +1025,7 @@ class CustomerAnalysisReport {
 					<div class="customer-main-info">
 						<span class="customer-code">${c.customer || ''}</span>
 						<span class="customer-name">${c.customer_name || ''}</span>
+						${c.top_item_group ? `<span class="customer-category"><i class="fa fa-tag"></i> ${c.top_item_group}</span>` : ''}
 					</div>
 					<div class="customer-stats">
 						<div class="stat-box">
@@ -779,6 +1036,42 @@ class CustomerAnalysisReport {
 							<div class="stat-val">${c.invoice_count_period || 0}</div>
 							<div class="stat-lbl">فواتير الفترة</div>
 						</div>
+						<div class="stat-box">
+							<div class="stat-val">${this.num(c.total_weight_tons, 2)}</div>
+							<div class="stat-lbl">طن</div>
+						</div>
+						<div class="stat-box">
+							<div class="stat-val">${c.unique_items_count || 0}</div>
+							<div class="stat-lbl">صنف</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="customer-info-bar">
+					<div class="info-item">
+						<i class="fa fa-calendar-check-o"></i>
+						<span class="info-label">أول فاتورة:</span>
+						<span class="info-value">${c.first_invoice_date || '-'}</span>
+					</div>
+					<div class="info-item">
+						<i class="fa fa-calendar"></i>
+						<span class="info-label">آخر فاتورة:</span>
+						<span class="info-value">${c.last_invoice_date || '-'}</span>
+					</div>
+					<div class="info-item last-inv">
+						<i class="fa fa-file-text-o"></i>
+						<span class="info-label">آخر فاتورة:</span>
+						<span class="info-value">${this.fmt(c.last_invoice_amount)}</span>
+						<span class="info-profit ${(c.last_invoice_profit || 0) >= 0 ? 'profit-pos' : 'profit-neg'}">
+							<i class="fa ${(c.last_invoice_profit || 0) >= 0 ? 'fa-arrow-up' : 'fa-arrow-down'}"></i>
+							${this.fmt(Math.abs(c.last_invoice_profit))}
+						</span>
+					</div>
+					<div class="info-item highlight">
+						<i class="fa fa-star"></i>
+						<span class="info-label">المجموعة الأكثر:</span>
+						<span class="info-value">${c.top_item_group || '-'}</span>
+						<span class="info-amount">(${this.fmt(c.top_group_amount)})</span>
 					</div>
 				</div>
 
