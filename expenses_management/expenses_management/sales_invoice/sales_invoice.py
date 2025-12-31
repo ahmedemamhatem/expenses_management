@@ -66,36 +66,137 @@ def get_available_qty(item_code, warehouse):
 
 def validate_available_qty(doc, method=None):
     """Validate that expected delivery warehouse is set and available qty is sufficient for each item before submit"""
-    errors = []
+    
+    warehouse_errors = []
+    qty_errors = []
+    
     for item in doc.items:
         # Check if Expected Delivery Warehouse is set
         if not item.custom_expected_delivery_warehouse:
-            errors.append(
-                _("Row {0}: Expected Delivery Warehouse is required for item {1}").format(
-                    item.idx,
-                    item.item_code,
-                )
-            )
+            warehouse_errors.append({
+                "idx": item.idx,
+                "item_code": item.item_code,
+                "item_name": item.item_name
+            })
         else:
             # Check available qty
             available = get_available_qty(
                 item.item_code, item.custom_expected_delivery_warehouse
             )
             if available < item.qty:
-                errors.append(
-                    _(
-                        "Row {0}: Item {1} has only {2} available in {3}, but {4} is required"
-                    ).format(
-                        item.idx,
-                        item.item_code,
-                        available,
-                        item.custom_expected_delivery_warehouse,
-                        item.qty,
-                    )
-                )
+                qty_errors.append({
+                    "idx": item.idx,
+                    "item_code": item.item_code,
+                    "item_name": item.item_name,
+                    "available": available,
+                    "required": item.qty,
+                    "shortage": item.qty - available,
+                    "warehouse": item.custom_expected_delivery_warehouse
+                })
 
-    if errors:
-        frappe.throw("<br>".join(errors), title=_("Validation Error"))
+    if warehouse_errors or qty_errors:
+        message = build_error_message(warehouse_errors, qty_errors)
+        frappe.throw(message, title=_("⚠️ خطأ في التحقق من المخزون"))
+
+
+def build_error_message(warehouse_errors, qty_errors):
+    """Build formatted error message in Arabic"""
+    
+    message_parts = []
+    
+    # Warehouse errors
+    if warehouse_errors:
+        message_parts.append("""
+            <div style="margin-bottom: 15px;">
+                <h4 style="color: #e74c3c; margin-bottom: 10px;">
+                    <i class="fa fa-warehouse"></i> 
+                    مستودع التسليم المتوقع غير محدد
+                </h4>
+                <table class="table table-bordered table-sm" style="margin: 0;">
+                    <thead style="background-color: #f8d7da;">
+                        <tr>
+                            <th style="text-align: center; width: 60px;">السطر</th>
+                            <th style="text-align: center;">رمز الصنف</th>
+                            <th style="text-align: center;">اسم الصنف</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """)
+        
+        for err in warehouse_errors:
+            message_parts.append(f"""
+                <tr>
+                    <td style="text-align: center;">{err['idx']}</td>
+                    <td style="text-align: center;">{err['item_code']}</td>
+                    <td style="text-align: center;">{err['item_name']}</td>
+                </tr>
+            """)
+        
+        message_parts.append("""
+                    </tbody>
+                </table>
+            </div>
+        """)
+    
+    # Quantity errors
+    if qty_errors:
+        message_parts.append("""
+            <div style="margin-bottom: 15px;">
+                <h4 style="color: #e74c3c; margin-bottom: 10px;">
+                    <i class="fa fa-exclamation-triangle"></i> 
+                    الكمية المتوفرة غير كافية
+                </h4>
+                <table class="table table-bordered table-sm" style="margin: 0;">
+                    <thead style="background-color: #f8d7da;">
+                        <tr>
+                            <th style="text-align: center; width: 60px;">السطر</th>
+                            <th style="text-align: center;">الصنف</th>
+                            <th style="text-align: center;">المستودع</th>
+                            <th style="text-align: center;">المطلوب</th>
+                            <th style="text-align: center;">المتوفر</th>
+                            <th style="text-align: center;">العجز</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        """)
+        
+        for err in qty_errors:
+            message_parts.append(f"""
+                <tr>
+                    <td style="text-align: center;">{err['idx']}</td>
+                    <td style="text-align: center;">
+                        <strong>{err['item_code']}</strong><br>
+                        <small style="color: #666;">{err['item_name']}</small>
+                    </td>
+                    <td style="text-align: center;">{err['warehouse']}</td>
+                    <td style="text-align: center; color: #2980b9;">
+                        <strong>{err['required']}</strong>
+                    </td>
+                    <td style="text-align: center; color: #27ae60;">
+                        <strong>{err['available']}</strong>
+                    </td>
+                    <td style="text-align: center; color: #e74c3c;">
+                        <strong>{err['shortage']}</strong>
+                    </td>
+                </tr>
+            """)
+        
+        message_parts.append("""
+                    </tbody>
+                </table>
+            </div>
+        """)
+    
+    # Summary
+    total_errors = len(warehouse_errors) + len(qty_errors)
+    message_parts.append(f"""
+        <div style="margin-top: 15px; padding: 10px; background-color: #fff3cd; border-radius: 5px; border-right: 4px solid #ffc107;">
+            <strong>📋 ملخص:</strong> 
+            تم العثور على <strong style="color: #e74c3c;">{total_errors}</strong> خطأ يجب تصحيحه قبل الإرسال
+        </div>
+    """)
+    
+    return "".join(message_parts)
 
 
 def update_available_qty_on_validate(doc, method=None):
