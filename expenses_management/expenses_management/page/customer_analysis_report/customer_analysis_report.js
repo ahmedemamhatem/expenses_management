@@ -24,8 +24,6 @@ class CustomerAnalysisReport {
 			sort_order: 'desc'
 		};
 
-		this.report_data = null;
-
 		this.setup_page();
 		this.render_content();
 	}
@@ -426,40 +424,6 @@ class CustomerAnalysisReport {
 					box-shadow: 0 6px 28px rgba(99, 102, 241, 0.5);
 				}
 
-				/* ===== EXPORT BUTTONS ===== */
-				.export-buttons {
-					position: fixed;
-					bottom: 90px;
-					right: 24px;
-					z-index: 9998;
-					display: flex;
-					flex-direction: column;
-					gap: 10px;
-				}
-
-				.export-btn {
-					width: 44px;
-					height: 44px;
-					border-radius: 12px;
-					border: none;
-					color: #fff;
-					cursor: pointer;
-					display: flex;
-					align-items: center;
-					justify-content: center;
-					box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-					transition: all 0.3s ease;
-					font-size: 18px;
-				}
-
-				.export-btn:hover {
-					transform: scale(1.1);
-				}
-
-				.export-btn.excel { background: linear-gradient(135deg, #059669, #10b981); }
-				.export-btn.pdf { background: linear-gradient(135deg, #dc2626, #ef4444); }
-				.export-btn.print { background: linear-gradient(135deg, #2563eb, #3b82f6); }
-
 				/* ===== MAIN REPORT ===== */
 				.customer-analysis-report {
 					direction: rtl;
@@ -470,274 +434,6 @@ class CustomerAnalysisReport {
 
 				#report-content {
 					width: 100%;
-				}
-
-				/* ===== CEO DASHBOARD HEADER ===== */
-				.ceo-dashboard-header {
-					background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-					border-radius: 20px;
-					padding: 24px;
-					margin-bottom: 24px;
-					color: #fff;
-					box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-				}
-
-				.dashboard-title-row {
-					display: flex;
-					justify-content: space-between;
-					align-items: center;
-					margin-bottom: 24px;
-					padding-bottom: 16px;
-					border-bottom: 2px solid rgba(255, 255, 255, 0.1);
-				}
-
-				.dashboard-title {
-					font-size: 28px;
-					font-weight: 900;
-					display: flex;
-					align-items: center;
-					gap: 12px;
-				}
-
-				.dashboard-title i {
-					color: #fbbf24;
-					font-size: 32px;
-				}
-
-				.dashboard-period {
-					background: rgba(99, 102, 241, 0.3);
-					padding: 12px 24px;
-					border-radius: 12px;
-					font-size: 14px;
-					font-weight: 600;
-					display: flex;
-					align-items: center;
-					gap: 10px;
-				}
-
-				.dashboard-period i {
-					color: #a5b4fc;
-				}
-
-				/* ===== KPI CARDS ===== */
-				.kpi-cards {
-					display: grid;
-					grid-template-columns: repeat(6, 1fr);
-					gap: 16px;
-					margin-bottom: 24px;
-				}
-
-				.kpi-card {
-					background: rgba(255, 255, 255, 0.08);
-					border-radius: 16px;
-					padding: 20px;
-					text-align: center;
-					border: 2px solid rgba(255, 255, 255, 0.1);
-					transition: all 0.3s ease;
-					position: relative;
-					overflow: hidden;
-				}
-
-				.kpi-card::before {
-					content: '';
-					position: absolute;
-					top: 0;
-					left: 0;
-					right: 0;
-					height: 4px;
-				}
-
-				.kpi-card.customers::before { background: linear-gradient(90deg, #6366f1, #8b5cf6); }
-				.kpi-card.invoices::before { background: linear-gradient(90deg, #2563eb, #3b82f6); }
-				.kpi-card.sales::before { background: linear-gradient(90deg, #059669, #10b981); }
-				.kpi-card.profit::before { background: linear-gradient(90deg, #16a34a, #22c55e); }
-				.kpi-card.avg::before { background: linear-gradient(90deg, #d97706, #f59e0b); }
-				.kpi-card.margin::before { background: linear-gradient(90deg, #dc2626, #ef4444); }
-
-				.kpi-card:hover {
-					transform: translateY(-4px);
-					background: rgba(255, 255, 255, 0.12);
-				}
-
-				.kpi-icon {
-					font-size: 28px;
-					margin-bottom: 12px;
-					opacity: 0.9;
-				}
-
-				.kpi-card.customers .kpi-icon { color: #a5b4fc; }
-				.kpi-card.invoices .kpi-icon { color: #93c5fd; }
-				.kpi-card.sales .kpi-icon { color: #6ee7b7; }
-				.kpi-card.profit .kpi-icon { color: #86efac; }
-				.kpi-card.avg .kpi-icon { color: #fcd34d; }
-				.kpi-card.margin .kpi-icon { color: #fca5a5; }
-
-				.kpi-value {
-					font-size: 26px;
-					font-weight: 900;
-					margin-bottom: 6px;
-				}
-
-				.kpi-label {
-					font-size: 12px;
-					color: #94a3b8;
-					font-weight: 600;
-					margin-bottom: 10px;
-				}
-
-				.kpi-growth {
-					display: inline-flex;
-					align-items: center;
-					gap: 4px;
-					padding: 4px 10px;
-					border-radius: 20px;
-					font-size: 11px;
-					font-weight: 700;
-				}
-
-				.kpi-growth.positive {
-					background: rgba(16, 185, 129, 0.2);
-					color: #10b981;
-				}
-
-				.kpi-growth.negative {
-					background: rgba(239, 68, 68, 0.2);
-					color: #ef4444;
-				}
-
-				/* ===== CHARTS SECTION ===== */
-				.charts-section {
-					display: grid;
-					grid-template-columns: 2fr 1fr;
-					gap: 20px;
-					margin-bottom: 24px;
-				}
-
-				.chart-card {
-					background: #fff;
-					border-radius: 16px;
-					padding: 20px;
-					box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-				}
-
-				.chart-title {
-					font-size: 16px;
-					font-weight: 800;
-					color: #1e293b;
-					margin-bottom: 16px;
-					display: flex;
-					align-items: center;
-					gap: 10px;
-				}
-
-				.chart-title i {
-					color: #6366f1;
-				}
-
-				.chart-container {
-					height: 280px;
-				}
-
-				/* ===== ALERTS SECTION ===== */
-				.alerts-section {
-					background: #fff;
-					border-radius: 16px;
-					padding: 20px;
-					margin-bottom: 24px;
-					box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-				}
-
-				.alerts-title {
-					font-size: 18px;
-					font-weight: 800;
-					color: #1e293b;
-					margin-bottom: 16px;
-					display: flex;
-					align-items: center;
-					gap: 10px;
-				}
-
-				.alerts-title i {
-					color: #f59e0b;
-				}
-
-				.alerts-grid {
-					display: grid;
-					grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-					gap: 16px;
-				}
-
-				.alert-card {
-					padding: 16px;
-					border-radius: 12px;
-					border-right: 5px solid;
-					display: flex;
-					gap: 14px;
-					align-items: flex-start;
-				}
-
-				.alert-card.warning {
-					background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-					border-color: #f59e0b;
-				}
-
-				.alert-card.danger {
-					background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
-					border-color: #ef4444;
-				}
-
-				.alert-card.success {
-					background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-					border-color: #10b981;
-				}
-
-				.alert-card.info {
-					background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-					border-color: #3b82f6;
-				}
-
-				.alert-card.primary {
-					background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
-					border-color: #6366f1;
-				}
-
-				.alert-icon {
-					width: 40px;
-					height: 40px;
-					border-radius: 10px;
-					display: flex;
-					align-items: center;
-					justify-content: center;
-					font-size: 18px;
-					flex-shrink: 0;
-				}
-
-				.alert-card.warning .alert-icon { background: #f59e0b; color: #fff; }
-				.alert-card.danger .alert-icon { background: #ef4444; color: #fff; }
-				.alert-card.success .alert-icon { background: #10b981; color: #fff; }
-				.alert-card.info .alert-icon { background: #3b82f6; color: #fff; }
-				.alert-card.primary .alert-icon { background: #6366f1; color: #fff; }
-
-				.alert-content {
-					flex: 1;
-				}
-
-				.alert-card-title {
-					font-size: 14px;
-					font-weight: 800;
-					margin-bottom: 4px;
-				}
-
-				.alert-card.warning .alert-card-title { color: #b45309; }
-				.alert-card.danger .alert-card-title { color: #dc2626; }
-				.alert-card.success .alert-card-title { color: #059669; }
-				.alert-card.info .alert-card-title { color: #2563eb; }
-				.alert-card.primary .alert-card-title { color: #4f46e5; }
-
-				.alert-message {
-					font-size: 13px;
-					color: #64748b;
-					line-height: 1.5;
 				}
 
 				/* ===== CUSTOMER CARD ===== */
@@ -1272,42 +968,30 @@ class CustomerAnalysisReport {
 				}
 
 				/* ===== RESPONSIVE ===== */
-				@media (max-width: 1400px) {
-					.kpi-cards { grid-template-columns: repeat(3, 1fr); }
-					.charts-section { grid-template-columns: 1fr; }
-				}
-
 				@media (max-width: 1200px) {
 					.metrics-row { grid-template-columns: repeat(3, 1fr); }
 					.customer-info-bar { justify-content: center; }
 				}
 
 				@media (max-width: 768px) {
-					.kpi-cards { grid-template-columns: repeat(2, 1fr); }
 					.metrics-row { grid-template-columns: repeat(2, 1fr); }
 					.customer-card-header { flex-direction: column; gap: 10px; }
 					.customer-stats { flex-wrap: wrap; justify-content: center; }
 					.customer-main-info { flex-direction: column; text-align: center; }
 					.customer-info-bar { flex-direction: column; gap: 12px; align-items: flex-start; }
-					.dashboard-title-row { flex-direction: column; gap: 16px; }
 				}
 
 				@media (max-width: 480px) {
-					.kpi-cards { grid-template-columns: 1fr; }
 					.metrics-row { grid-template-columns: 1fr 1fr; }
 					.info-item { font-size: 12px; }
 				}
 
 				/* ===== PRINT ===== */
 				@media print {
-					.floating-gear-btn, .export-buttons { display: none !important; }
+					.floating-gear-btn { display: none !important; }
 					.items-panel { display: block !important; }
 					.customer-info-bar { background: #f8fafc !important; color: #1e293b !important; }
 					.info-item, .info-item .info-label { color: #1e293b !important; }
-					.ceo-dashboard-header { background: #f1f5f9 !important; color: #1e293b !important; }
-					.kpi-card { background: #f8fafc !important; border: 1px solid #e2e8f0 !important; }
-					.chart-card { page-break-inside: avoid; }
-					.customer-card { page-break-inside: avoid; }
 				}
 			</style>
 			<div class="customer-analysis-report">
@@ -1348,7 +1032,6 @@ class CustomerAnalysisReport {
 			args: filters,
 			callback: (r) => {
 				if (r.message && r.message.customers && r.message.customers.length > 0) {
-					this.report_data = r.message;
 					this.render_report(r.message);
 				} else {
 					$('#report-content').html(`
@@ -1376,18 +1059,6 @@ class CustomerAnalysisReport {
 
 		let html = '';
 
-		// Add CEO Dashboard Header
-		html += this.render_ceo_dashboard(data);
-
-		// Add Charts Section
-		html += this.render_charts_section(data);
-
-		// Add Alerts Section
-		html += this.render_alerts_section(data.alerts || []);
-
-		// Add Export Buttons
-		html += this.render_export_buttons();
-
 		// Add Customer Cards
 		sortedCustomers.forEach((c) => {
 			html += this.render_customer_card(c);
@@ -1396,13 +1067,10 @@ class CustomerAnalysisReport {
 		$('#report-content').html(html);
 
 		// Initialize event handlers
-		this.init_event_handlers();
-
-		// Render charts after DOM is ready
-		setTimeout(() => {
-			this.render_sales_trend_chart(data.daily_sales_trend || []);
-			this.render_item_groups_chart(data.top_item_groups || []);
-		}, 100);
+		$('.items-toggle').off('click').on('click', function() {
+			$(this).toggleClass('open');
+			$(this).next('.items-panel').toggleClass('show');
+		});
 	}
 
 	sort_customers(customers) {
@@ -1421,232 +1089,6 @@ class CustomerAnalysisReport {
 
 			return sort_order === 'desc' ? valB - valA : valA - valB;
 		});
-	}
-
-	render_ceo_dashboard(data) {
-		const summary = data.summary || {};
-		const growth = data.growth || {};
-		const filters = data.filters || {};
-
-		return `
-			<div class="ceo-dashboard-header">
-				<div class="dashboard-title-row">
-					<div class="dashboard-title">
-						<i class="fa fa-dashboard"></i>
-						لوحة تحكم المدير التنفيذي
-					</div>
-					<div class="dashboard-period">
-						<i class="fa fa-calendar"></i>
-						${filters.from_date || ''} - ${filters.to_date || ''}
-					</div>
-				</div>
-
-				<div class="kpi-cards">
-					<div class="kpi-card customers">
-						<div class="kpi-icon"><i class="fa fa-users"></i></div>
-						<div class="kpi-value">${summary.total_customers || 0}</div>
-						<div class="kpi-label">إجمالي العملاء</div>
-						${this.render_growth_badge(growth.total_customers)}
-					</div>
-
-					<div class="kpi-card invoices">
-						<div class="kpi-icon"><i class="fa fa-file-text"></i></div>
-						<div class="kpi-value">${summary.total_invoices || 0}</div>
-						<div class="kpi-label">عدد الفواتير</div>
-						${this.render_growth_badge(growth.total_invoices)}
-					</div>
-
-					<div class="kpi-card sales">
-						<div class="kpi-icon"><i class="fa fa-money"></i></div>
-						<div class="kpi-value">${this.fmt(summary.total_sales)}</div>
-						<div class="kpi-label">إجمالي المبيعات</div>
-						${this.render_growth_badge(growth.total_sales)}
-					</div>
-
-					<div class="kpi-card profit">
-						<div class="kpi-icon"><i class="fa fa-line-chart"></i></div>
-						<div class="kpi-value">${this.fmt(summary.total_profit)}</div>
-						<div class="kpi-label">صافي الربح</div>
-						${this.render_growth_badge(growth.total_profit)}
-					</div>
-
-					<div class="kpi-card avg">
-						<div class="kpi-icon"><i class="fa fa-shopping-cart"></i></div>
-						<div class="kpi-value">${this.fmt(summary.avg_order_value)}</div>
-						<div class="kpi-label">متوسط قيمة الطلب</div>
-						${this.render_growth_badge(growth.avg_order_value)}
-					</div>
-
-					<div class="kpi-card margin">
-						<div class="kpi-icon"><i class="fa fa-percent"></i></div>
-						<div class="kpi-value">${this.num(summary.profit_margin, 1)}%</div>
-						<div class="kpi-label">هامش الربح</div>
-					</div>
-				</div>
-			</div>
-		`;
-	}
-
-	render_growth_badge(growth) {
-		if (growth === undefined || growth === null) return '';
-
-		const isPositive = growth >= 0;
-		const icon = isPositive ? 'fa-arrow-up' : 'fa-arrow-down';
-		const cls = isPositive ? 'positive' : 'negative';
-
-		return `
-			<div class="kpi-growth ${cls}">
-				<i class="fa ${icon}"></i>
-				${Math.abs(growth).toFixed(1)}%
-			</div>
-		`;
-	}
-
-	render_charts_section(data) {
-		return `
-			<div class="charts-section">
-				<div class="chart-card">
-					<div class="chart-title">
-						<i class="fa fa-area-chart"></i>
-						اتجاه المبيعات اليومي
-					</div>
-					<div class="chart-container" id="sales-trend-chart"></div>
-				</div>
-
-				<div class="chart-card">
-					<div class="chart-title">
-						<i class="fa fa-pie-chart"></i>
-						توزيع مجموعات الأصناف
-					</div>
-					<div class="chart-container" id="item-groups-chart"></div>
-				</div>
-			</div>
-		`;
-	}
-
-	render_sales_trend_chart(trend_data) {
-		if (!trend_data || trend_data.length === 0) {
-			$('#sales-trend-chart').html('<div class="empty-box" style="padding:40px;"><p>لا توجد بيانات للعرض</p></div>');
-			return;
-		}
-
-		const labels = trend_data.map(d => d.date);
-		const sales_values = trend_data.map(d => d.sales || 0);
-		const returns_values = trend_data.map(d => d.returns || 0);
-
-		const chart = new frappe.Chart('#sales-trend-chart', {
-			data: {
-				labels: labels,
-				datasets: [
-					{
-						name: 'المبيعات',
-						type: 'line',
-						values: sales_values
-					},
-					{
-						name: 'المرتجعات',
-						type: 'bar',
-						values: returns_values
-					}
-				]
-			},
-			type: 'axis-mixed',
-			height: 250,
-			colors: ['#10b981', '#ef4444'],
-			axisOptions: {
-				xAxisMode: 'tick',
-				xIsSeries: true
-			},
-			lineOptions: {
-				regionFill: 1,
-				dotSize: 4
-			},
-			barOptions: {
-				spaceRatio: 0.5
-			}
-		});
-	}
-
-	render_item_groups_chart(groups_data) {
-		if (!groups_data || groups_data.length === 0) {
-			$('#item-groups-chart').html('<div class="empty-box" style="padding:40px;"><p>لا توجد بيانات للعرض</p></div>');
-			return;
-		}
-
-		const labels = groups_data.map(d => d.item_group || 'غير محدد');
-		const values = groups_data.map(d => d.total_amount || 0);
-
-		const chart = new frappe.Chart('#item-groups-chart', {
-			data: {
-				labels: labels,
-				datasets: [
-					{
-						name: 'المبلغ',
-						values: values
-					}
-				]
-			},
-			type: 'donut',
-			height: 250,
-			colors: ['#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#14b8a6']
-		});
-	}
-
-	render_alerts_section(alerts) {
-		if (!alerts || alerts.length === 0) return '';
-
-		const alertCards = alerts.map(alert => `
-			<div class="alert-card ${alert.type}">
-				<div class="alert-icon">
-					<i class="fa ${alert.icon}"></i>
-				</div>
-				<div class="alert-content">
-					<div class="alert-card-title">${alert.title}</div>
-					<div class="alert-message">${alert.message}</div>
-				</div>
-			</div>
-		`).join('');
-
-		return `
-			<div class="alerts-section">
-				<div class="alerts-title">
-					<i class="fa fa-lightbulb-o"></i>
-					التنبيهات والرؤى
-				</div>
-				<div class="alerts-grid">
-					${alertCards}
-				</div>
-			</div>
-		`;
-	}
-
-	render_export_buttons() {
-		return `
-			<div class="export-buttons">
-				<button class="export-btn excel" id="export-excel-btn" title="تصدير Excel">
-					<i class="fa fa-file-excel-o"></i>
-				</button>
-				<button class="export-btn pdf" id="export-pdf-btn" title="تصدير PDF">
-					<i class="fa fa-file-pdf-o"></i>
-				</button>
-				<button class="export-btn print" id="export-print-btn" title="طباعة">
-					<i class="fa fa-print"></i>
-				</button>
-			</div>
-		`;
-	}
-
-	init_event_handlers() {
-		// Items toggle
-		$('.items-toggle').off('click').on('click', function() {
-			$(this).toggleClass('open');
-			$(this).next('.items-panel').toggleClass('show');
-		});
-
-		// Export handlers
-		$('#export-excel-btn').off('click').on('click', () => this.export_to_excel());
-		$('#export-pdf-btn').off('click').on('click', () => this.export_to_pdf());
-		$('#export-print-btn').off('click').on('click', () => this.print_report());
 	}
 
 	render_customer_card(c) {
@@ -1812,86 +1254,6 @@ class CustomerAnalysisReport {
 				</table>
 			</div>
 		`;
-	}
-
-	export_to_excel() {
-		if (!this.report_data || !this.report_data.customers) {
-			frappe.msgprint({ title: __('تنبيه'), indicator: 'orange', message: __('لا توجد بيانات للتصدير') });
-			return;
-		}
-
-		frappe.msgprint({ title: __('تصدير'), indicator: 'blue', message: __('جاري تصدير التقرير إلى Excel...') });
-
-		// Prepare data for export
-		const customers = this.report_data.customers;
-		const summary = this.report_data.summary || {};
-
-		let csv_data = [];
-
-		// Add summary header
-		csv_data.push(['تقرير تحليل العملاء']);
-		csv_data.push(['الفترة', `${this.filters.from_date} - ${this.filters.to_date}`]);
-		csv_data.push([]);
-		csv_data.push(['ملخص التقرير']);
-		csv_data.push(['إجمالي العملاء', summary.total_customers || 0]);
-		csv_data.push(['إجمالي الفواتير', summary.total_invoices || 0]);
-		csv_data.push(['إجمالي المبيعات', summary.total_sales || 0]);
-		csv_data.push(['صافي الربح', summary.total_profit || 0]);
-		csv_data.push([]);
-
-		// Add customer data header
-		csv_data.push([
-			'كود العميل', 'اسم العميل', 'إجمالي المشتريات', 'مشتريات الفترة',
-			'الرصيد', 'المستحق', 'أرباح كلي', 'أرباح الفترة',
-			'عدد الفواتير كلي', 'عدد الفواتير في الفترة'
-		]);
-
-		// Add customer rows
-		customers.forEach(c => {
-			csv_data.push([
-				c.customer || '',
-				c.customer_name || '',
-				c.total_purchase_all_time || 0,
-				c.total_purchase_period || 0,
-				c.total_balance || 0,
-				c.total_due || 0,
-				c.revenue_all_time || 0,
-				c.revenue_period || 0,
-				c.invoice_count_all_time || 0,
-				c.invoice_count_period || 0
-			]);
-		});
-
-		// Convert to CSV
-		const csv_content = csv_data.map(row => row.join(',')).join('\n');
-		const BOM = '\uFEFF';
-		const blob = new Blob([BOM + csv_content], { type: 'text/csv;charset=utf-8;' });
-		const url = URL.createObjectURL(blob);
-
-		const link = document.createElement('a');
-		link.setAttribute('href', url);
-		link.setAttribute('download', `customer_analysis_report_${frappe.datetime.nowdate()}.csv`);
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
-
-		frappe.show_alert({ message: __('تم تصدير التقرير بنجاح'), indicator: 'green' });
-	}
-
-	export_to_pdf() {
-		frappe.msgprint({
-			title: __('تصدير PDF'),
-			indicator: 'blue',
-			message: __('جاري إعداد التقرير للطباعة. يرجى استخدام خيار "طباعة إلى PDF" من نافذة الطباعة.')
-		});
-
-		setTimeout(() => {
-			window.print();
-		}, 500);
-	}
-
-	print_report() {
-		window.print();
 	}
 
 	fmt(v) {
