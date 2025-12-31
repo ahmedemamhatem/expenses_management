@@ -200,11 +200,44 @@ def build_error_message(warehouse_errors, qty_errors):
 
 
 def update_available_qty_on_validate(doc, method=None):
-    """Update available qty field for each item on validate"""
+    """Update available qty field for each item on validate and set default warehouse"""
+    
+    # Skip if return invoice
+    if doc.is_return:
+        return
+    
+    # Skip if not draft
+    if doc.docstatus != 0:
+        return
+    
+    # Get default warehouse from POS Profile for current user
+    default_warehouse = get_user_pos_warehouse()
+    
     for item in doc.items:
+        # Set default warehouse if not set
+        if not item.custom_expected_delivery_warehouse and default_warehouse:
+            item.custom_expected_delivery_warehouse = default_warehouse
+        
+        # Update available qty
         if item.custom_expected_delivery_warehouse and item.item_code:
             item.custom_available_qty = get_available_qty(
                 item.item_code, item.custom_expected_delivery_warehouse
             )
         else:
             item.custom_available_qty = 0
+
+
+def get_user_pos_warehouse():
+    """Get warehouse from POS Profile for current user"""
+    
+    pos_profile = frappe.db.get_value(
+        "POS Profile User",
+        {"user": frappe.session.user},
+        "parent"
+    )
+    
+    if pos_profile:
+        warehouse = frappe.db.get_value("POS Profile", pos_profile, "warehouse")
+        return warehouse
+    
+    return None
