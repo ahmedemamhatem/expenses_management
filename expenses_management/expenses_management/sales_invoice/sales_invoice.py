@@ -66,10 +66,14 @@ def get_available_qty(item_code, warehouse):
 
 def validate_available_qty(doc, method=None):
     """Validate that expected delivery warehouse is set and available qty is sufficient for each item before submit"""
-    
+
+    # Exclude specific company from validation
+    if doc.company == "شركة المهنا التجاريه":
+        return
+
     warehouse_errors = []
     qty_errors = []
-    
+
     for item in doc.items:
         # Check if Expected Delivery Warehouse is set
         if not item.custom_expected_delivery_warehouse:
@@ -201,11 +205,15 @@ def build_error_message(warehouse_errors, qty_errors):
 
 def update_available_qty_on_validate(doc, method=None):
     """Update available qty field for each item on validate and set default warehouse"""
-    
+
+    # Exclude specific company from validation
+    if doc.company == "شركة المهنا التجاريه":
+        return
+
     # Skip if return invoice
     if doc.is_return:
         return
-    
+
     # Skip if not draft
     if doc.docstatus != 0:
         return
