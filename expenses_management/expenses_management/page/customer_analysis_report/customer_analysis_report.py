@@ -89,8 +89,12 @@ def get_report_data(company, from_date=None, to_date=None, branch=None, customer
 
     customers_data = get_customers_analysis_optimized(values, extra_where)
 
+    # Calculate period totals directly from invoices (with all filters applied)
+    period_totals = calculate_period_totals_from_invoices(values, extra_where)
+
     return {
         "customers": customers_data,
+        "totals": period_totals,
         "filters": {
             "company": company,
             "from_date": str(from_date),
@@ -105,6 +109,110 @@ def get_report_data(company, from_date=None, to_date=None, branch=None, customer
     }
 
 
+def calculate_period_totals_from_invoices(values, extra_where):
+    """Calculate totals directly from invoices with all filters applied"""
+
+    # Add customer join if filtering by customer_group or territory
+    customer_join = ""
+    if "customer_group" in values or "territory" in values:
+        customer_join = "LEFT JOIN `tabCustomer` c ON c.name = si.customer"
+
+    # Get invoice totals for the period
+    invoice_totals = frappe.db.sql(f"""
+        SELECT
+            COUNT(DISTINCT si.customer) as total_customers,
+            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN si.base_grand_total ELSE 0 END), 0) as period_sales,
+            COALESCE(SUM(CASE WHEN si.is_return = 1 THEN ABS(si.base_grand_total) ELSE 0 END), 0) as period_returns,
+            COALESCE(SUM(si.outstanding_amount), 0) as total_balance,
+            COUNT(CASE WHEN si.is_return = 0 THEN 1 END) as invoice_count_period,
+            COUNT(CASE WHEN si.is_return = 1 THEN 1 END) as return_count_period
+        FROM `tabSales Invoice` si
+        {customer_join}
+        WHERE si.docstatus = 1
+        AND si.company = %(company)s
+        AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+        {extra_where}
+    """, values, as_dict=1)
+
+    inv_data = invoice_totals[0] if invoice_totals else {}
+
+    # Get due amounts for the period
+    due_totals = frappe.db.sql(f"""
+        SELECT
+            COALESCE(SUM(si.outstanding_amount), 0) as total_due
+        FROM `tabSales Invoice` si
+        {customer_join}
+        WHERE si.docstatus = 1
+        AND si.company = %(company)s
+        AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+        AND si.outstanding_amount > 0
+        AND si.due_date <= CURDATE()
+        {extra_where}
+    """, values, as_dict=1)
+
+    due_data = due_totals[0] if due_totals else {}
+
+    # Get revenue and cost for the period (profit calculation)
+    revenue_totals = frappe.db.sql(f"""
+        SELECT
+            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.base_net_amount ELSE -sii.base_net_amount END), 0) as net_sales,
+            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * sii.incoming_rate ELSE -sii.stock_qty * sii.incoming_rate END), 0) as cost_of_goods
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        {customer_join}
+        WHERE si.docstatus = 1
+        AND si.company = %(company)s
+        AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+        {extra_where}
+    """, values, as_dict=1)
+
+    rev_data = revenue_totals[0] if revenue_totals else {}
+
+    # Get weight and items for the period
+    items_totals = frappe.db.sql(f"""
+        SELECT
+            COUNT(*) as total_items_count,
+            COUNT(DISTINCT sii.item_code) as unique_items_count,
+            COALESCE(SUM(sii.stock_qty * COALESCE(item.weight_per_unit, 1)), 0) / 1000 as total_weight_tons
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        LEFT JOIN `tabItem` item ON item.name = sii.item_code
+        {customer_join}
+        WHERE si.docstatus = 1
+        AND si.company = %(company)s
+        AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+        AND si.is_return = 0
+        {extra_where}
+    """, values, as_dict=1)
+
+    items_data = items_totals[0] if items_totals else {}
+
+    # Calculate profit
+    net_sales = flt(rev_data.get("net_sales", 0))
+    cost_of_goods = flt(rev_data.get("cost_of_goods", 0))
+    revenue_period = net_sales - cost_of_goods
+
+    # Build totals
+    totals = {
+        "total_customers": cint(inv_data.get("total_customers", 0)),
+        "total_purchase_period": round(flt(inv_data.get("period_sales", 0)) - flt(inv_data.get("period_returns", 0)), 2),
+        "total_purchase_all_time": round(flt(inv_data.get("period_sales", 0)) - flt(inv_data.get("period_returns", 0)), 2),
+        "total_balance": round(flt(inv_data.get("total_balance", 0)), 2),
+        "total_due": round(flt(due_data.get("total_due", 0)), 2),
+        "revenue_period": round(revenue_period, 2),
+        "revenue_all_time": round(revenue_period, 2),
+        "invoice_count_period": cint(inv_data.get("invoice_count_period", 0)),
+        "invoice_count_all_time": cint(inv_data.get("invoice_count_period", 0)),
+        "return_count_period": cint(inv_data.get("return_count_period", 0)),
+        "return_count_all_time": cint(inv_data.get("return_count_period", 0)),
+        "total_weight_tons": round(flt(items_data.get("total_weight_tons", 0)), 3),
+        "total_items_count": cint(items_data.get("total_items_count", 0)),
+        "unique_items_count": cint(items_data.get("unique_items_count", 0))
+    }
+
+    return totals
+
+
 def get_customers_analysis_optimized(values, extra_where):
     """Get detailed analysis for all customers using batch queries"""
 
@@ -114,8 +222,10 @@ def get_customers_analysis_optimized(values, extra_where):
 
     # Add customer join if filtering by customer_group or territory
     customer_join = ""
+    customer_join_sii = ""
     if "customer_group" in values or "territory" in values:
         customer_join = "LEFT JOIN `tabCustomer` c ON c.name = si.customer"
+        customer_join_sii = "LEFT JOIN `tabCustomer` c ON c.name = si.customer"
 
     # BATCH 1: Get all customers with period totals
     period_data = frappe.db.sql(f"""
@@ -202,6 +312,7 @@ def get_customers_analysis_optimized(values, extra_where):
             COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * sii.incoming_rate ELSE -sii.stock_qty * sii.incoming_rate END), 0) as cost_of_goods
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        {customer_join_sii}
         WHERE si.docstatus = 1
         AND si.company = %(company)s
         AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
@@ -225,6 +336,7 @@ def get_customers_analysis_optimized(values, extra_where):
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
         LEFT JOIN `tabItem` i ON i.name = sii.item_code
+        {customer_join_sii}
         WHERE si.docstatus = 1
         AND si.company = %(company)s
         AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
@@ -355,6 +467,11 @@ def get_customers_analysis_optimized(values, extra_where):
 def get_all_customer_items_batch(values, extra_where, customer_list):
     """Get items sold to all customers in single batch query - excludes returns"""
 
+    # Add customer join if filtering by customer_group or territory
+    customer_join = ""
+    if "customer_group" in values or "territory" in values:
+        customer_join = "LEFT JOIN `tabCustomer` c ON c.name = si.customer"
+
     # BATCH: Get all items with invoice details (not grouped to show invoice IDs)
     # Only get sales invoices (is_return = 0), exclude returns
     items = frappe.db.sql(f"""
@@ -372,6 +489,7 @@ def get_all_customer_items_batch(values, extra_where, customer_list):
             sii.stock_qty * sii.incoming_rate as cost_of_goods
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        {customer_join}
         WHERE si.docstatus = 1
         AND si.company = %(company)s
         AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
