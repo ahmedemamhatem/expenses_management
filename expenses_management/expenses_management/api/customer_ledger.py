@@ -82,12 +82,158 @@ def get_permitted_companies():
     return user_permissions
 
 
+def get_permitted_branches():
+    """Get list of branches the current user has access to"""
+    if frappe.session.user == "Administrator":
+        return None  # No filter needed
+
+    user_permissions = frappe.get_all(
+        "User Permission",
+        filters={
+            "user": frappe.session.user,
+            "allow": "Branch"
+        },
+        pluck="for_value"
+    )
+
+    # If no branch permissions set, user has access to all
+    if not user_permissions:
+        return None
+
+    return user_permissions
+
+
+def get_permitted_sales_persons():
+    """Get list of sales persons the current user has access to"""
+    if frappe.session.user == "Administrator":
+        return None  # No filter needed
+
+    user_permissions = frappe.get_all(
+        "User Permission",
+        filters={
+            "user": frappe.session.user,
+            "allow": "Sales Person"
+        },
+        pluck="for_value"
+    )
+
+    # If no sales person permissions set, user has access to all
+    if not user_permissions:
+        return None
+
+    return user_permissions
+
+
+def get_vouchers_by_sales_person(sales_persons, company, from_date, to_date):
+    """Get voucher numbers that have any of the specified sales persons"""
+    if not sales_persons:
+        return None  # No filter needed
+
+    # Get Sales Invoices with these sales persons
+    vouchers = frappe.db.sql("""
+        SELECT DISTINCT si.name
+        FROM `tabSales Invoice` si
+        INNER JOIN `tabSales Team` st ON st.parent = si.name AND st.parenttype = 'Sales Invoice'
+        WHERE st.sales_person IN %(sales_persons)s
+        AND si.company = %(company)s
+        AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+        AND si.docstatus = 1
+    """, {
+        "sales_persons": sales_persons,
+        "company": company,
+        "from_date": from_date,
+        "to_date": to_date
+    }, pluck="name")
+
+    return vouchers if vouchers else []
+
+
+def _get_empty_ledger_response(customer, customer_name, company, from_date, to_date):
+    """Return empty ledger response when user has no access"""
+    return {
+        "customer": customer,
+        "customer_name": customer_name,
+        "company": company,
+        "from_date": str(from_date),
+        "to_date": str(to_date),
+        "from_date_formatted": formatdate(from_date, "dd-MM-yyyy"),
+        "to_date_formatted": formatdate(to_date, "dd-MM-yyyy"),
+        "opening_balance": 0,
+        "entries": [],
+        "total_debit": 0,
+        "total_credit": 0,
+        "closing_balance": 0,
+        "credit_limit": 0,
+        "credit_days": 0,
+        "available_credit": 0
+    }
+
+
+def get_opening_balance(customer, company, from_date, permitted_branches=None, permitted_sales_persons=None):
+    """Get the opening balance before the from_date with permission restrictions"""
+    conditions = """
+        party_type = 'Customer'
+        AND party = %(customer)s
+        AND company = %(company)s
+        AND posting_date < %(from_date)s
+        AND is_cancelled = 0
+    """
+    params = {
+        "customer": customer,
+        "company": company,
+        "from_date": from_date
+    }
+
+    # Add branch restriction
+    if permitted_branches is not None:
+        if not permitted_branches:
+            return 0
+        conditions += " AND (branch IN %(branches)s OR branch IS NULL OR branch = '')"
+        params["branches"] = permitted_branches
+
+    # Add sales person restriction for opening balance
+    if permitted_sales_persons is not None:
+        if not permitted_sales_persons:
+            return 0
+        # Get all allowed SI vouchers before from_date
+        allowed_si_vouchers = frappe.db.sql("""
+            SELECT DISTINCT si.name
+            FROM `tabSales Invoice` si
+            INNER JOIN `tabSales Team` st ON st.parent = si.name AND st.parenttype = 'Sales Invoice'
+            WHERE st.sales_person IN %(sales_persons)s
+            AND si.company = %(company)s
+            AND si.posting_date < %(from_date)s
+            AND si.docstatus = 1
+        """, {
+            "sales_persons": permitted_sales_persons,
+            "company": company,
+            "from_date": from_date
+        }, pluck="name")
+
+        conditions += """
+            AND (
+                (voucher_type != 'Sales Invoice')
+                OR (voucher_type = 'Sales Invoice' AND voucher_no IN %(allowed_vouchers)s)
+            )
+        """
+        params["allowed_vouchers"] = allowed_si_vouchers if allowed_si_vouchers else ['']
+
+    result = frappe.db.sql("""
+        SELECT
+            COALESCE(SUM(debit) - SUM(credit), 0) as opening_balance
+        FROM `tabGL Entry`
+        WHERE {conditions}
+    """.format(conditions=conditions), params, as_dict=1)
+
+    return flt(result[0].opening_balance if result else 0, 2)
+
+
 @frappe.whitelist()
 def get_customer_ledger(customer, company=None, from_date=None, to_date=None):
     """
     Get customer ledger with all transactions (Sales Invoices, Payment Entries, Journal Entries)
     Returns debit, credit, running balance for each transaction
-    Applies user permission filters for Customer and Company
+    Applies user permission filters for Customer, Company, Branch and Sales Person
     """
     if not customer:
         frappe.throw(_("Customer is required"))
@@ -118,8 +264,55 @@ def get_customer_ledger(customer, company=None, from_date=None, to_date=None):
     from_date = getdate(from_date)
     to_date = getdate(to_date)
 
-    # Get opening balance (all transactions before from_date)
-    opening_balance = get_opening_balance(customer, company, from_date)
+    # Get user permission restrictions
+    permitted_branches = get_permitted_branches()
+    permitted_sales_persons = get_permitted_sales_persons()
+
+    # Get opening balance (all transactions before from_date) with restrictions
+    opening_balance = get_opening_balance(customer, company, from_date, permitted_branches, permitted_sales_persons)
+
+    # Build the GL entries query with branch and sales person restrictions
+    conditions = """
+        gle.party_type = 'Customer'
+        AND gle.party = %(customer)s
+        AND gle.company = %(company)s
+        AND gle.posting_date BETWEEN %(from_date)s AND %(to_date)s
+        AND gle.is_cancelled = 0
+    """
+    params = {
+        "customer": customer,
+        "company": company,
+        "from_date": from_date,
+        "to_date": to_date
+    }
+
+    # Add branch restriction if user has branch permissions
+    if permitted_branches is not None:
+        if not permitted_branches:
+            # User has branch restrictions but no permitted branches - return empty
+            return _get_empty_ledger_response(customer, customer_name, company, from_date, to_date)
+        conditions += " AND (gle.branch IN %(branches)s OR gle.branch IS NULL OR gle.branch = '')"
+        params["branches"] = permitted_branches
+
+    # Add sales person restriction - filter vouchers by sales team
+    if permitted_sales_persons is not None:
+        if not permitted_sales_persons:
+            # User has sales person restrictions but no permitted sales persons - return empty
+            return _get_empty_ledger_response(customer, customer_name, company, from_date, to_date)
+
+        # Get allowed vouchers for Sales Invoices
+        allowed_si_vouchers = get_vouchers_by_sales_person(permitted_sales_persons, company, from_date, to_date)
+
+        # For sales person restriction, we filter:
+        # - Sales Invoices: only those with matching sales person in sales team
+        # - Payment Entries & Journal Entries: include all (they relate to customer, not specific sales person)
+        conditions += """
+            AND (
+                (gle.voucher_type != 'Sales Invoice')
+                OR (gle.voucher_type = 'Sales Invoice' AND gle.voucher_no IN %(allowed_vouchers)s)
+            )
+        """
+        params["allowed_vouchers"] = allowed_si_vouchers if allowed_si_vouchers else ['']
 
     # Get all GL entries for the customer within date range
     gl_entries = frappe.db.sql("""
@@ -131,20 +324,12 @@ def get_customer_ledger(customer, company=None, from_date=None, to_date=None):
             gle.credit,
             gle.remarks,
             gle.against_voucher_type,
-            gle.against_voucher
+            gle.against_voucher,
+            gle.branch
         FROM `tabGL Entry` gle
-        WHERE gle.party_type = 'Customer'
-        AND gle.party = %(customer)s
-        AND gle.company = %(company)s
-        AND gle.posting_date BETWEEN %(from_date)s AND %(to_date)s
-        AND gle.is_cancelled = 0
+        WHERE {conditions}
         ORDER BY gle.posting_date ASC, gle.creation ASC
-    """, {
-        "customer": customer,
-        "company": company,
-        "from_date": from_date,
-        "to_date": to_date
-    }, as_dict=1)
+    """.format(conditions=conditions), params, as_dict=1)
 
     # Process entries and calculate running balance
     ledger_entries = []
@@ -195,26 +380,6 @@ def get_customer_ledger(customer, company=None, from_date=None, to_date=None):
         "credit_days": cint(credit_days),
         "available_credit": flt(credit_limit - running_balance, 2) if credit_limit else 0
     }
-
-
-def get_opening_balance(customer, company, from_date):
-    """Get the opening balance before the from_date"""
-    result = frappe.db.sql("""
-        SELECT
-            COALESCE(SUM(debit) - SUM(credit), 0) as opening_balance
-        FROM `tabGL Entry`
-        WHERE party_type = 'Customer'
-        AND party = %(customer)s
-        AND company = %(company)s
-        AND posting_date < %(from_date)s
-        AND is_cancelled = 0
-    """, {
-        "customer": customer,
-        "company": company,
-        "from_date": from_date
-    }, as_dict=1)
-
-    return flt(result[0].opening_balance if result else 0, 2)
 
 
 def get_transaction_description(entry):
