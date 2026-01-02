@@ -38,6 +38,85 @@ frappe.ui.form.on("Sales Invoice", {
     refresh: function(frm) {
         // On load, use existing DB values - don't fetch fresh data
         // Fresh data is only fetched when customer field changes (for drafts only)
+
+        // Add customer ledger button for draft and submitted invoices (not cancelled)
+        if (frm.doc.docstatus === 0 || frm.doc.docstatus === 1) {
+            frm.add_custom_button(__('كشف حساب العميل'), function() {
+                // Check if customer is selected
+                if (!frm.doc.customer) {
+                    frappe.msgprint(__('يرجى تحديد العميل أولاً'));
+                    return;
+                }
+
+                // Show dialog to select date range
+                let dialog = new frappe.ui.Dialog({
+                    title: __('طباعة كشف حساب العميل'),
+                    fields: [
+                        {
+                            fieldtype: 'Link',
+                            fieldname: 'customer',
+                            label: __('العميل'),
+                            options: 'Customer',
+                            default: frm.doc.customer,
+                            read_only: 1
+                        },
+                        {
+                            fieldtype: 'Link',
+                            fieldname: 'company',
+                            label: __('الشركة'),
+                            options: 'Company',
+                            default: frm.doc.company,
+                            reqd: 1
+                        },
+                        {
+                            fieldtype: 'Column Break'
+                        },
+                        {
+                            fieldtype: 'Date',
+                            fieldname: 'from_date',
+                            label: __('من تاريخ'),
+                            default: frappe.datetime.add_months(frappe.datetime.get_today(), -12),
+                            reqd: 1
+                        },
+                        {
+                            fieldtype: 'Date',
+                            fieldname: 'to_date',
+                            label: __('إلى تاريخ'),
+                            default: frappe.datetime.get_today(),
+                            reqd: 1
+                        }
+                    ],
+                    primary_action_label: __('طباعة'),
+                    primary_action: function(values) {
+                        dialog.hide();
+                        frappe.call({
+                            method: 'expenses_management.expenses_management.api.customer_ledger.get_customer_ledger_html',
+                            args: {
+                                customer: values.customer,
+                                company: values.company,
+                                from_date: values.from_date,
+                                to_date: values.to_date
+                            },
+                            freeze: true,
+                            freeze_message: __('جاري تحميل كشف الحساب...'),
+                            callback: function(r) {
+                                if (r.message) {
+                                    let printWindow = window.open('', '_blank', 'width=1200,height=800');
+                                    printWindow.document.write(r.message);
+                                    printWindow.document.close();
+                                    printWindow.onload = function() {
+                                        setTimeout(function() {
+                                            printWindow.print();
+                                        }, 500);
+                                    };
+                                }
+                            }
+                        });
+                    }
+                });
+                dialog.show();
+            }).addClass('btn-primary');
+        }
     }
 });
 

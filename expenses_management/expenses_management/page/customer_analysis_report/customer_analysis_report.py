@@ -153,16 +153,26 @@ def calculate_period_totals_from_invoices(values, extra_where):
     inv_data = combined_totals[0] if combined_totals else {}
 
     # Combined query for revenue, cost, weight, and items
+    # Priority: 1. incoming_rate, 2. DN Stock Ledger valuation, 3. Bin valuation, 4. Avg Bin valuation
     revenue_items_totals = frappe.db.sql(f"""
         SELECT
             COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.base_net_amount ELSE -sii.base_net_amount END), 0) as net_sales,
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * sii.incoming_rate ELSE -sii.stock_qty * sii.incoming_rate END), 0) as cost_of_goods,
+            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * COALESCE(NULLIF(sii.incoming_rate, 0), dn_sle.valuation_rate, bin.valuation_rate, bin_avg.avg_valuation_rate, 0) ELSE -sii.stock_qty * COALESCE(NULLIF(sii.incoming_rate, 0), dn_sle.valuation_rate, bin.valuation_rate, bin_avg.avg_valuation_rate, 0) END), 0) as cost_of_goods,
             COUNT(*) as total_items_count,
             COUNT(DISTINCT sii.item_code) as unique_items_count,
             COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * COALESCE(item.weight_per_unit, 1) ELSE 0 END), 0) / 1000 as total_weight_tons
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
         LEFT JOIN `tabItem` item ON item.name = sii.item_code
+        LEFT JOIN `tabDelivery Note Item` dni ON dni.against_sales_invoice = si.name AND dni.item_code = sii.item_code
+        LEFT JOIN `tabStock Ledger Entry` dn_sle ON dn_sle.voucher_no = dni.parent AND dn_sle.voucher_type = 'Delivery Note' AND dn_sle.item_code = sii.item_code
+        LEFT JOIN `tabBin` bin ON bin.item_code = sii.item_code AND bin.warehouse = sii.warehouse
+        LEFT JOIN (
+            SELECT item_code, AVG(valuation_rate) as avg_valuation_rate
+            FROM `tabBin`
+            WHERE valuation_rate > 0
+            GROUP BY item_code
+        ) bin_avg ON bin_avg.item_code = sii.item_code
         {customer_join}
         WHERE si.docstatus = 1
         AND si.company = %(company)s
@@ -320,10 +330,19 @@ def get_customers_analysis_optimized(values, extra_where, use_credit_days=False)
         SELECT
             si.customer,
             COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.base_net_amount ELSE -sii.base_net_amount END), 0) as net_sales,
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * sii.incoming_rate ELSE -sii.stock_qty * sii.incoming_rate END), 0) as cost_of_goods,
+            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * COALESCE(NULLIF(sii.incoming_rate, 0), dn_sle.valuation_rate, bin.valuation_rate, bin_avg.avg_valuation_rate, 0) ELSE -sii.stock_qty * COALESCE(NULLIF(sii.incoming_rate, 0), dn_sle.valuation_rate, bin.valuation_rate, bin_avg.avg_valuation_rate, 0) END), 0) as cost_of_goods,
             COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.qty ELSE 0 END), 0) as total_qty
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        LEFT JOIN `tabDelivery Note Item` dni ON dni.against_sales_invoice = si.name AND dni.item_code = sii.item_code
+        LEFT JOIN `tabStock Ledger Entry` dn_sle ON dn_sle.voucher_no = dni.parent AND dn_sle.voucher_type = 'Delivery Note' AND dn_sle.item_code = sii.item_code
+        LEFT JOIN `tabBin` bin ON bin.item_code = sii.item_code AND bin.warehouse = sii.warehouse
+        LEFT JOIN (
+            SELECT item_code, AVG(valuation_rate) as avg_valuation_rate
+            FROM `tabBin`
+            WHERE valuation_rate > 0
+            GROUP BY item_code
+        ) bin_avg ON bin_avg.item_code = sii.item_code
         WHERE si.docstatus = 1
         AND si.company = %(company)s
         AND si.customer IN %(customers)s
@@ -337,9 +356,18 @@ def get_customers_analysis_optimized(values, extra_where, use_credit_days=False)
         SELECT
             si.customer,
             COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.base_net_amount ELSE -sii.base_net_amount END), 0) as net_sales,
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * sii.incoming_rate ELSE -sii.stock_qty * sii.incoming_rate END), 0) as cost_of_goods
+            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * COALESCE(NULLIF(sii.incoming_rate, 0), dn_sle.valuation_rate, bin.valuation_rate, bin_avg.avg_valuation_rate, 0) ELSE -sii.stock_qty * COALESCE(NULLIF(sii.incoming_rate, 0), dn_sle.valuation_rate, bin.valuation_rate, bin_avg.avg_valuation_rate, 0) END), 0) as cost_of_goods
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+        LEFT JOIN `tabDelivery Note Item` dni ON dni.against_sales_invoice = si.name AND dni.item_code = sii.item_code
+        LEFT JOIN `tabStock Ledger Entry` dn_sle ON dn_sle.voucher_no = dni.parent AND dn_sle.voucher_type = 'Delivery Note' AND dn_sle.item_code = sii.item_code
+        LEFT JOIN `tabBin` bin ON bin.item_code = sii.item_code AND bin.warehouse = sii.warehouse
+        LEFT JOIN (
+            SELECT item_code, AVG(valuation_rate) as avg_valuation_rate
+            FROM `tabBin`
+            WHERE valuation_rate > 0
+            GROUP BY item_code
+        ) bin_avg ON bin_avg.item_code = sii.item_code
         {customer_join_sii}
         WHERE si.docstatus = 1
         AND si.company = %(company)s
@@ -404,7 +432,7 @@ def get_customers_analysis_optimized(values, extra_where, use_credit_days=False)
             t.last_invoice_id,
             t.last_invoice_date,
             t.last_invoice_amount,
-            COALESCE(SUM(sii.base_net_amount - (sii.stock_qty * sii.incoming_rate)), 0) as last_invoice_profit
+            COALESCE(SUM(sii.base_net_amount - (sii.stock_qty * COALESCE(NULLIF(sii.incoming_rate, 0), dn_sle.valuation_rate, bin.valuation_rate, bin_avg.avg_valuation_rate, 0))), 0) as last_invoice_profit
         FROM (
             SELECT
                 si.customer,
@@ -427,6 +455,15 @@ def get_customers_analysis_optimized(values, extra_where, use_credit_days=False)
             GROUP BY si.customer
         ) t
         LEFT JOIN `tabSales Invoice Item` sii ON sii.parent = t.last_invoice_id
+        LEFT JOIN `tabDelivery Note Item` dni ON dni.against_sales_invoice = t.last_invoice_id AND dni.item_code = sii.item_code
+        LEFT JOIN `tabStock Ledger Entry` dn_sle ON dn_sle.voucher_no = dni.parent AND dn_sle.voucher_type = 'Delivery Note' AND dn_sle.item_code = sii.item_code
+        LEFT JOIN `tabBin` bin ON bin.item_code = sii.item_code AND bin.warehouse = sii.warehouse
+        LEFT JOIN (
+            SELECT item_code, AVG(valuation_rate) as avg_valuation_rate
+            FROM `tabBin`
+            WHERE valuation_rate > 0
+            GROUP BY item_code
+        ) bin_avg ON bin_avg.item_code = sii.item_code
         GROUP BY t.customer, t.last_invoice_id, t.last_invoice_date, t.last_invoice_amount
     """, {"company": company, "customers": customer_list}, as_dict=1)
 
@@ -466,10 +503,19 @@ def get_customers_analysis_optimized(values, extra_where, use_credit_days=False)
                 SELECT
                     si.customer,
                     COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.base_net_amount ELSE -sii.base_net_amount END), 0) as net_sales,
-                    COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * sii.incoming_rate ELSE -sii.stock_qty * sii.incoming_rate END), 0) as cost_of_goods,
+                    COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * COALESCE(NULLIF(sii.incoming_rate, 0), dn_sle.valuation_rate, bin.valuation_rate, bin_avg.avg_valuation_rate, 0) ELSE -sii.stock_qty * COALESCE(NULLIF(sii.incoming_rate, 0), dn_sle.valuation_rate, bin.valuation_rate, bin_avg.avg_valuation_rate, 0) END), 0) as cost_of_goods,
                     COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.qty ELSE 0 END), 0) as total_qty
                 FROM `tabSales Invoice Item` sii
                 INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+                LEFT JOIN `tabDelivery Note Item` dni ON dni.against_sales_invoice = si.name AND dni.item_code = sii.item_code
+                LEFT JOIN `tabStock Ledger Entry` dn_sle ON dn_sle.voucher_no = dni.parent AND dn_sle.voucher_type = 'Delivery Note' AND dn_sle.item_code = sii.item_code
+                LEFT JOIN `tabBin` bin ON bin.item_code = sii.item_code AND bin.warehouse = sii.warehouse
+                LEFT JOIN (
+                    SELECT item_code, AVG(valuation_rate) as avg_valuation_rate
+                    FROM `tabBin`
+                    WHERE valuation_rate > 0
+                    GROUP BY item_code
+                ) bin_avg ON bin_avg.item_code = sii.item_code
                 WHERE si.docstatus = 1
                 AND si.company = %(company)s
                 AND si.customer IN %(customers)s
@@ -604,11 +650,20 @@ def get_all_customer_items_batch(values, extra_where, customer_list, use_credit_
             sii.stock_qty,
             sii.base_net_amount as total_amount,
             COALESCE(sii.base_net_amount * (si.base_total_taxes_and_charges / NULLIF(si.base_net_total, 0)), 0) as tax_amount,
-            sii.stock_qty * sii.incoming_rate as cost_of_goods,
+            sii.stock_qty * COALESCE(NULLIF(sii.incoming_rate, 0), dn_sle.valuation_rate, bin.valuation_rate, bin_avg.avg_valuation_rate, 0) as cost_of_goods,
             COALESCE(item.weight_per_unit, 1) as weight_per_unit
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
         LEFT JOIN `tabItem` item ON item.name = sii.item_code
+        LEFT JOIN `tabDelivery Note Item` dni ON dni.against_sales_invoice = si.name AND dni.item_code = sii.item_code
+        LEFT JOIN `tabStock Ledger Entry` dn_sle ON dn_sle.voucher_no = dni.parent AND dn_sle.voucher_type = 'Delivery Note' AND dn_sle.item_code = sii.item_code
+        LEFT JOIN `tabBin` bin ON bin.item_code = sii.item_code AND bin.warehouse = sii.warehouse
+        LEFT JOIN (
+            SELECT item_code, AVG(valuation_rate) as avg_valuation_rate
+            FROM `tabBin`
+            WHERE valuation_rate > 0
+            GROUP BY item_code
+        ) bin_avg ON bin_avg.item_code = sii.item_code
         {customer_join}
         WHERE si.docstatus = 1
         AND si.company = %(company)s
