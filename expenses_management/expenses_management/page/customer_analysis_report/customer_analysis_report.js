@@ -1309,7 +1309,7 @@ class CustomerAnalysisReport {
 						</tr>
 					</table>
 					<table class="items-table">
-						<thead><tr><th>#</th><th>الفاتورة</th><th>الصنف</th><th>الكمية</th><th>الوزن</th><th>السعر</th><th>المبلغ</th><th>التكلفة</th><th>الربح</th><th>الفرع</th><th>المستخدم</th></tr></thead>
+						<thead><tr><th>#</th><th>الفاتورة / الصنف</th><th>الكمية</th><th>الوزن</th><th>السعر</th><th>المبلغ</th><th>التكلفة</th><th>الربح</th><th>الفرع</th><th>المستخدم</th></tr></thead>
 						<tbody>
 			`;
 
@@ -1320,8 +1320,7 @@ class CustomerAnalysisReport {
 					html += `
 						<tr>
 							<td class="idx">${idx + 1}</td>
-							<td>${i.invoice_id || ''}</td>
-							<td>${i.item_code || ''}</td>
+							<td style="text-align: right;"><div style="font-weight:900;">${i.invoice_id || ''}</div><div style="font-size:11px; color:#555;">${i.item_code || ''} - ${i.item_name || ''}</div></td>
 							<td>${this.num(i.qty, 2)} ${i.invoice_uom || ''}</td>
 							<td>${this.num(i.weight_in_tons, 3)}</td>
 							<td>${this.fmt(invoiceRate)}</td>
