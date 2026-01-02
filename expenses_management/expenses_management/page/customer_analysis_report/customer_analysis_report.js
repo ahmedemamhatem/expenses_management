@@ -1318,12 +1318,12 @@ class CustomerAnalysisReport {
 					const invoiceRate = i.qty && i.qty !== 0 ? (i.total_amount / i.qty) : 0;
 					const profitPct = i.total_amount && i.total_amount !== 0 ? ((i.revenue / i.total_amount) * 100) : 0;
 					html += `
-						<tr>
+						<tr style="font-size:10px;">
 							<td class="idx">${idx + 1}</td>
-							<td style="text-align: right;"><div style="font-weight:900;">${i.item_code || ''} - ${i.item_name || ''}</div><div style="font-size:11px; color:#555;">${i.invoice_id || ''}</div></td>
+							<td style="text-align: right;"><div>${i.item_code || ''} - ${i.item_name || ''}</div><div style="font-size:9px; color:#555;">${i.invoice_id || ''}</div></td>
 							<td>${this.num(i.qty, 2)} ${i.invoice_uom || ''}</td>
 							<td>${this.num(i.weight_in_tons, 3)}</td>
-							<td><div style="font-weight:900;">${this.fmt(i.rate_per_ton)}/طن</div><div style="font-size:11px; color:#555;">${this.fmt(invoiceRate)}/${i.invoice_uom || ''}</div></td>
+							<td><div>${this.fmt(i.rate_per_ton)}/طن</div><div style="font-size:9px; color:#555;">${this.fmt(invoiceRate)}/${i.invoice_uom || ''}</div></td>
 							<td>${this.fmt(i.total_amount)}</td>
 							<td>${this.fmt(i.cost_of_goods)}</td>
 							<td><span style="font-weight:900;">${this.fmt(i.revenue)}</span> <span class="pct-badge ${profitPct >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num(profitPct, 1)}%</span></td>
