@@ -68,12 +68,9 @@ def get_available_qty(item_code, warehouse):
 def validate_available_qty(doc, method=None):
     """Validate that expected delivery warehouse is set and available qty is sufficient for each item before submit"""
 
-    # Exclude specific company from validation
-    if doc.company == "شركة المهنا التجاريه":
-        return
-
     warehouse_errors = []
     qty_errors = []
+    user_roles = frappe.get_roles()
 
     for item in doc.items:
         # Check if Expected Delivery Warehouse is set
@@ -84,6 +81,23 @@ def validate_available_qty(doc, method=None):
                 "item_name": item.item_name
             })
         else:
+            # Check if validation is excluded for this warehouse
+            warehouse_settings = frappe.db.get_value(
+                "Warehouse",
+                item.custom_expected_delivery_warehouse,
+                ["custom_validate_available_qty", "custom_bypass_qty_validation_role"],
+                as_dict=True
+            )
+
+            # Skip validation for this item if warehouse is excluded (checkbox checked)
+            if warehouse_settings and warehouse_settings.custom_validate_available_qty:
+                continue
+
+            # Skip validation for this item if user has bypass role
+            bypass_role = warehouse_settings.custom_bypass_qty_validation_role if warehouse_settings else None
+            if bypass_role and bypass_role in user_roles:
+                continue
+
             # Check available qty (available is in stock UOM)
             available = get_available_qty(
                 item.item_code, item.custom_expected_delivery_warehouse
@@ -243,10 +257,6 @@ def build_error_message(warehouse_errors, qty_errors):
 def update_available_qty_on_validate(doc, method=None):
     """Update available qty field for each item on validate and set default warehouse"""
 
-    # Exclude specific company from validation
-    if doc.company == "شركة المهنا التجاريه":
-        return
-
     # Skip if return invoice
     if doc.is_return:
         return
@@ -254,16 +264,16 @@ def update_available_qty_on_validate(doc, method=None):
     # Skip if not draft
     if doc.docstatus != 0:
         return
-    
+
     # Get default warehouse from POS Profile for current user
     default_warehouse = get_user_pos_warehouse()
-    
+
     for item in doc.items:
         # Set default warehouse if not set
         if not item.custom_expected_delivery_warehouse and default_warehouse:
             item.custom_expected_delivery_warehouse = default_warehouse
-        
-        # Update available qty
+
+        # Update available qty if warehouse is set
         if item.custom_expected_delivery_warehouse and item.item_code:
             item.custom_available_qty = get_available_qty(
                 item.item_code, item.custom_expected_delivery_warehouse
