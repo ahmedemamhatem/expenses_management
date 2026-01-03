@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from erpnext.stock.get_item_details import get_conversion_factor
 
 
 @frappe.whitelist()
@@ -83,19 +84,45 @@ def validate_available_qty(doc, method=None):
                 "item_name": item.item_name
             })
         else:
-            # Check available qty
+            # Check available qty (available is in stock UOM)
             available = get_available_qty(
                 item.item_code, item.custom_expected_delivery_warehouse
             )
-            if available < item.qty:
+
+            # Get stock UOM for the item
+            stock_uom = frappe.db.get_value("Item", item.item_code, "stock_uom")
+
+            # Convert required qty to stock UOM if different UOM is used
+            if item.uom and item.uom != stock_uom:
+                conversion_factor = get_conversion_factor(item.item_code, item.uom).get("conversion_factor", 1)
+                required_in_stock_uom = item.qty * conversion_factor
+            else:
+                conversion_factor = 1
+                required_in_stock_uom = item.qty
+
+            if available < required_in_stock_uom:
+                # Calculate shortage in stock UOM
+                shortage_in_stock_uom = required_in_stock_uom - available
+
+                # Convert available and shortage back to item UOM for display
+                if conversion_factor != 1:
+                    available_in_item_uom = available / conversion_factor
+                    shortage_in_item_uom = shortage_in_stock_uom / conversion_factor
+                else:
+                    available_in_item_uom = available
+                    shortage_in_item_uom = shortage_in_stock_uom
+
                 qty_errors.append({
                     "idx": item.idx,
                     "item_code": item.item_code,
                     "item_name": item.item_name,
-                    "available": available,
+                    "available": available_in_item_uom,
                     "required": item.qty,
-                    "shortage": item.qty - available,
-                    "warehouse": item.custom_expected_delivery_warehouse
+                    "shortage": shortage_in_item_uom,
+                    "warehouse": item.custom_expected_delivery_warehouse,
+                    "uom": item.uom or stock_uom,
+                    "stock_uom": stock_uom,
+                    "conversion_factor": conversion_factor
                 })
 
     if warehouse_errors or qty_errors:
@@ -147,7 +174,7 @@ def build_error_message(warehouse_errors, qty_errors):
         message_parts.append("""
             <div style="margin-bottom: 15px;">
                 <h4 style="color: #e74c3c; margin-bottom: 10px;">
-                    <i class="fa fa-exclamation-triangle"></i> 
+                    <i class="fa fa-exclamation-triangle"></i>
                     الكمية المتوفرة غير كافية
                 </h4>
                 <table class="table table-bordered table-sm" style="margin: 0;">
@@ -159,12 +186,19 @@ def build_error_message(warehouse_errors, qty_errors):
                             <th style="text-align: center;">المطلوب</th>
                             <th style="text-align: center;">المتوفر</th>
                             <th style="text-align: center;">العجز</th>
+                            <th style="text-align: center;">الوحدة</th>
                         </tr>
                     </thead>
                     <tbody>
         """)
-        
+
         for err in qty_errors:
+            # Format quantities for display
+            required_display = frappe.utils.flt(err['required'], 3)
+            available_display = frappe.utils.flt(err['available'], 3)
+            shortage_display = frappe.utils.flt(err['shortage'], 3)
+            uom = err.get('uom', '')
+
             message_parts.append(f"""
                 <tr>
                     <td style="text-align: center;">{err['idx']}</td>
@@ -174,13 +208,16 @@ def build_error_message(warehouse_errors, qty_errors):
                     </td>
                     <td style="text-align: center;">{err['warehouse']}</td>
                     <td style="text-align: center; color: #2980b9;">
-                        <strong>{err['required']}</strong>
+                        <strong>{required_display}</strong>
                     </td>
                     <td style="text-align: center; color: #27ae60;">
-                        <strong>{err['available']}</strong>
+                        <strong>{available_display}</strong>
                     </td>
                     <td style="text-align: center; color: #e74c3c;">
-                        <strong>{err['shortage']}</strong>
+                        <strong>{shortage_display}</strong>
+                    </td>
+                    <td style="text-align: center;">
+                        <strong>{uom}</strong>
                     </td>
                 </tr>
             """)

@@ -1246,8 +1246,8 @@ class CustomerAnalysisReport {
 					.items-table .idx { background: #e5e5e5; font-weight: 900; width: 30px; font-size: 13px; }
 					.neg { font-weight: 900; color: #c00; }
 					.pct-badge { display: inline-block; font-size: 12px; font-weight: 900; padding: 3px 8px; border-radius: 6px; margin-right: 4px; }
-					.pct-badge.pct-pos { background: #d4edda; color: #155724; border: 2px solid #28a745; }
-					.pct-badge.pct-neg { background: #f8d7da; color: #721c24; border: 2px solid #dc3545; }
+					.pct-badge.pct-pos { background: #d4edda; color: #155724; }
+					.pct-badge.pct-neg { background: #f8d7da; color: #721c24; }
 					@media print {
 						body { padding: 6mm; font-size: 14px; }
 						.customer-section { page-break-inside: avoid; }
