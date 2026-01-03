@@ -284,15 +284,98 @@ def update_available_qty_on_validate(doc, method=None):
 
 def get_user_pos_warehouse():
     """Get warehouse from POS Profile for current user"""
-    
+
     pos_profile = frappe.db.get_value(
         "POS Profile User",
         {"user": frappe.session.user},
         "parent"
     )
-    
+
     if pos_profile:
         warehouse = frappe.db.get_value("POS Profile", pos_profile, "warehouse")
         return warehouse
-    
+
     return None
+
+
+def validate_customer_credit(doc, method=None):
+    """Validate customer credit limit and overdue amounts before saving Sales Invoice"""
+
+    # Skip if no customer
+    if not doc.customer:
+        return
+
+    # Skip if this is a Credit Note (return)
+    if doc.is_return:
+        return
+
+    # Get customer data
+    customer = frappe.get_doc("Customer", doc.customer)
+
+    # Check if Stop Payment Terms is set (skip blocking, only warn)
+    skip_blocking = customer.get("custom_stop_payment_terms") == 1
+
+    # Get credit limit for the current company
+    customer_credit_limit = 0
+    for cl in customer.get("credit_limits", []):
+        if cl.company == doc.company:
+            customer_credit_limit = frappe.utils.flt(cl.credit_limit)
+            break
+
+    # Check if customer has no credit limit or credit limit = 0
+    # In this case, invoice must be fully paid (outstanding = 0)
+    if customer_credit_limit <= 0:
+        outstanding = frappe.utils.flt(doc.outstanding_amount)
+        if outstanding > 0:
+            frappe.throw(
+                _("لا يمكن الحفظ! العميل ليس لديه حد ائتماني. يجب أن تكون الفاتورة مدفوعة بالكامل قبل الإرسال. المبلغ المتبقي: {0} ريال.").format(outstanding),
+                title=_("خطأ في الحد الائتماني")
+            )
+        # If fully paid, allow and skip other checks
+        return
+
+    # Get credit days from Payment Terms Template
+    credit_days = 0
+    if doc.payment_terms_template:
+        payment_terms = frappe.get_doc("Payment Terms Template", doc.payment_terms_template)
+        if payment_terms.terms and len(payment_terms.terms) > 0:
+            credit_days = frappe.utils.cint(payment_terms.terms[0].credit_days or 0)
+
+    # Get overdue invoices (exclude credit notes & negative outstanding)
+    today = frappe.utils.today()
+    invoices = frappe.get_all(
+        "Sales Invoice",
+        filters=[
+            ["customer", "=", doc.customer],
+            ["docstatus", "=", 1],
+            ["is_return", "=", 0]
+        ],
+        fields=["name", "posting_date", "outstanding_amount"],
+        limit=100
+    )
+
+    total_due = 0
+    for inv in invoices:
+        amount = frappe.utils.flt(inv.outstanding_amount)
+
+        # Skip negative or zero balances
+        if amount <= 0:
+            continue
+
+        credit_limit_date = frappe.utils.add_days(inv.posting_date, credit_days)
+        if frappe.utils.date_diff(today, credit_limit_date) > 0:
+            total_due += amount
+
+    # Block only if overdue total is >= 10 SAR
+    if total_due >= 10:
+        if skip_blocking:
+            frappe.msgprint(
+                _("تحذير: لدى العميل مبالغ متأخرة عن فترة الائتمان (إجمالي: {0} ريال).").format(total_due),
+                title=_("تحذير"),
+                indicator="orange"
+            )
+        else:
+            frappe.throw(
+                _("لا يمكن الحفظ! لدى العميل مبالغ متأخرة عن فترة الائتمان (إجمالي: {0} ريال).").format(total_due),
+                title=_("خطأ في فترة الائتمان")
+            )
