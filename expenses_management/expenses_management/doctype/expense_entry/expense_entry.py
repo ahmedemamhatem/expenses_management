@@ -100,7 +100,8 @@ class ExpenseEntry(Document):
 		je.append("accounts", {
 			"account": self.paid_from_account,
 			"credit_in_account_currency": self.total_amount,
-			"cost_center": self.cost_center
+			"cost_center": self.cost_center,
+			"branch": self.branch
 		})
 
 		# Group expenses by account for debit entries
@@ -129,7 +130,8 @@ class ExpenseEntry(Document):
 			je.append("accounts", {
 				"account": account,
 				"debit_in_account_currency": amount,
-				"cost_center": self.cost_center
+				"cost_center": self.cost_center,
+				"branch": self.branch
 			})
 
 		# Add tax account entries
@@ -137,7 +139,8 @@ class ExpenseEntry(Document):
 			je.append("accounts", {
 				"account": account,
 				"debit_in_account_currency": amount,
-				"cost_center": self.cost_center
+				"cost_center": self.cost_center,
+				"branch": self.branch
 			})
 
 		je.flags.ignore_permissions = True

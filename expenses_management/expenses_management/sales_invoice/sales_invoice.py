@@ -299,7 +299,13 @@ def get_user_pos_warehouse():
 
 
 def validate_customer_credit(doc, method=None):
-    """Validate customer credit limit and overdue amounts before saving Sales Invoice"""
+    """Validate customer credit limit and overdue amounts before submitting Sales Invoice
+
+    Credit Limit Logic:
+    1. If customer has NO credit limit (0 or not set) → Invoice must be fully paid
+    2. If customer HAS credit limit → Check if total outstanding would exceed the limit
+    3. Also check for overdue invoices based on credit days
+    """
 
     # Skip if no customer
     if not doc.customer:
@@ -317,24 +323,64 @@ def validate_customer_credit(doc, method=None):
 
     # Get credit limit for the current company
     customer_credit_limit = 0
+    bypass_credit_limit = False
     for cl in customer.get("credit_limits", []):
         if cl.company == doc.company:
             customer_credit_limit = frappe.utils.flt(cl.credit_limit)
+            bypass_credit_limit = cl.get("bypass_credit_limit_check") == 1
             break
 
-    # Check if customer has no credit limit or credit limit = 0
-    # In this case, invoice must be fully paid (outstanding = 0)
+    # Get current total outstanding for this customer (excluding current invoice)
+    current_outstanding = get_customer_total_outstanding(doc.customer, doc.company, exclude_invoice=doc.name)
+
+    # Outstanding amount from this invoice
+    invoice_outstanding = frappe.utils.flt(doc.outstanding_amount)
+
+    # Case 1: No credit limit (0 or not set) → Must pay fully
     if customer_credit_limit <= 0:
-        outstanding = frappe.utils.flt(doc.outstanding_amount)
-        if outstanding > 0:
+        if invoice_outstanding > 0:
             frappe.throw(
-                _("لا يمكن الحفظ! العميل ليس لديه حد ائتماني. يجب أن تكون الفاتورة مدفوعة بالكامل قبل الإرسال. المبلغ المتبقي: {0} ريال.").format(outstanding),
+                _("لا يمكن الإرسال! العميل ليس لديه حد ائتماني. يجب أن تكون الفاتورة مدفوعة بالكامل قبل الإرسال.<br><br>"
+                  "المبلغ المتبقي: <b>{0}</b> ريال").format(invoice_outstanding),
                 title=_("خطأ في الحد الائتماني")
             )
         # If fully paid, allow and skip other checks
         return
 
-    # Get credit days from Payment Terms Template
+    # Case 2: Has credit limit → Check if would exceed limit
+    new_total_outstanding = current_outstanding + invoice_outstanding
+
+    if new_total_outstanding > customer_credit_limit and not bypass_credit_limit:
+        exceeded_by = new_total_outstanding - customer_credit_limit
+        if skip_blocking:
+            frappe.msgprint(
+                _("تحذير: سيتجاوز العميل الحد الائتماني!<br><br>"
+                  "الحد الائتماني: <b>{0}</b> ريال<br>"
+                  "الرصيد الحالي: <b>{1}</b> ريال<br>"
+                  "هذه الفاتورة: <b>{2}</b> ريال<br>"
+                  "الإجمالي الجديد: <b>{3}</b> ريال<br>"
+                  "التجاوز: <b>{4}</b> ريال").format(
+                    customer_credit_limit, current_outstanding, invoice_outstanding,
+                    new_total_outstanding, exceeded_by
+                ),
+                title=_("تحذير - تجاوز الحد الائتماني"),
+                indicator="orange"
+            )
+        else:
+            frappe.throw(
+                _("لا يمكن الإرسال! سيتجاوز العميل الحد الائتماني.<br><br>"
+                  "الحد الائتماني: <b>{0}</b> ريال<br>"
+                  "الرصيد الحالي: <b>{1}</b> ريال<br>"
+                  "هذه الفاتورة: <b>{2}</b> ريال<br>"
+                  "الإجمالي الجديد: <b>{3}</b> ريال<br>"
+                  "التجاوز: <b>{4}</b> ريال").format(
+                    customer_credit_limit, current_outstanding, invoice_outstanding,
+                    new_total_outstanding, exceeded_by
+                ),
+                title=_("خطأ - تجاوز الحد الائتماني")
+            )
+
+    # Case 3: Check for overdue invoices
     credit_days = 0
     if doc.payment_terms_template:
         payment_terms = frappe.get_doc("Payment Terms Template", doc.payment_terms_template)
@@ -354,7 +400,7 @@ def validate_customer_credit(doc, method=None):
         limit=100
     )
 
-    total_due = 0
+    total_overdue = 0
     for inv in invoices:
         amount = frappe.utils.flt(inv.outstanding_amount)
 
@@ -364,18 +410,50 @@ def validate_customer_credit(doc, method=None):
 
         credit_limit_date = frappe.utils.add_days(inv.posting_date, credit_days)
         if frappe.utils.date_diff(today, credit_limit_date) > 0:
-            total_due += amount
+            total_overdue += amount
 
     # Block only if overdue total is >= 10 SAR
-    if total_due >= 10:
+    if total_overdue >= 10:
         if skip_blocking:
             frappe.msgprint(
-                _("تحذير: لدى العميل مبالغ متأخرة عن فترة الائتمان (إجمالي: {0} ريال).").format(total_due),
+                _("تحذير: لدى العميل مبالغ متأخرة عن فترة الائتمان (إجمالي: {0} ريال).").format(total_overdue),
                 title=_("تحذير"),
                 indicator="orange"
             )
         else:
             frappe.throw(
-                _("لا يمكن الحفظ! لدى العميل مبالغ متأخرة عن فترة الائتمان (إجمالي: {0} ريال).").format(total_due),
+                _("لا يمكن الإرسال! لدى العميل مبالغ متأخرة عن فترة الائتمان (إجمالي: {0} ريال).").format(total_overdue),
                 title=_("خطأ في فترة الائتمان")
             )
+
+
+def get_customer_total_outstanding(customer, company, exclude_invoice=None):
+    """Get total outstanding amount for a customer in a specific company"""
+
+    filters = [
+        ["customer", "=", customer],
+        ["company", "=", company],
+        ["docstatus", "=", 1],
+        ["outstanding_amount", ">", 0]
+    ]
+
+    if exclude_invoice:
+        filters.append(["name", "!=", exclude_invoice])
+
+    result = frappe.db.sql(
+        """
+        SELECT COALESCE(SUM(outstanding_amount), 0) as total_outstanding
+        FROM `tabSales Invoice`
+        WHERE customer = %s
+        AND company = %s
+        AND docstatus = 1
+        AND outstanding_amount > 0
+        {exclude_clause}
+        """.format(
+            exclude_clause="AND name != %s" if exclude_invoice else ""
+        ),
+        (customer, company, exclude_invoice) if exclude_invoice else (customer, company),
+        as_dict=True
+    )
+
+    return frappe.utils.flt(result[0].total_outstanding) if result else 0

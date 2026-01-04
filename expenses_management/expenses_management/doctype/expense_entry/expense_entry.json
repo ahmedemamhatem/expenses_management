@@ -10,6 +10,7 @@
   "column_break_1",
   "company",
   "cost_center",
+  "branch",
   "payment_section",
   "mode_of_payment",
   "column_break_2",
@@ -175,12 +176,22 @@
    "options": "Expense Entry",
    "print_hide": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Branch",
+   "options": "Branch"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-12-17 16:58:00.133739",
+ "modified": "2026-01-04 16:56:17.872600",
  "modified_by": "Administrator",
  "module": "Expenses Management",
  "name": "Expense Entry",
