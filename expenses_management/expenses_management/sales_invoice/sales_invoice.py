@@ -66,13 +66,19 @@ def get_available_qty(item_code, warehouse):
 
 
 def validate_available_qty(doc, method=None):
-    """Validate that expected delivery warehouse is set and available qty is sufficient for each item before submit"""
+    """Validate that expected delivery warehouse is set and available qty is sufficient for each item before submit.
+    Only validates stock items (is_stock_item = 1)."""
 
     warehouse_errors = []
     qty_errors = []
     user_roles = frappe.get_roles()
 
     for item in doc.items:
+        # Check if item is a stock item - skip validation for non-stock items
+        is_stock_item = frappe.db.get_value("Item", item.item_code, "is_stock_item")
+        if not is_stock_item:
+            continue
+
         # Check if Expected Delivery Warehouse is set
         if not item.custom_expected_delivery_warehouse:
             warehouse_errors.append({

@@ -185,13 +185,14 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Branch",
-   "options": "Branch"
+   "options": "Branch",
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-01-04 16:56:17.872600",
+ "modified": "2026-01-04 19:21:45.055269",
  "modified_by": "Administrator",
  "module": "Expenses Management",
  "name": "Expense Entry",
