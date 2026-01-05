@@ -69,6 +69,10 @@ def validate_available_qty(doc, method=None):
     """Validate that expected delivery warehouse is set and available qty is sufficient for each item before submit.
     Only validates stock items (is_stock_item = 1)."""
 
+    # Skip validation for شركة المهنا التجاريه company
+    if doc.company == "شركة المهنا التجاريه":
+        return
+
     warehouse_errors = []
     qty_errors = []
     user_roles = frappe.get_roles()

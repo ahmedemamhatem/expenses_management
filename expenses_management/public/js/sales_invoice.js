@@ -39,82 +39,80 @@ frappe.ui.form.on("Sales Invoice", {
         // On load, use existing DB values - don't fetch fresh data
         // Fresh data is only fetched when customer field changes (for drafts only)
 
-        // Add customer ledger button for draft and submitted invoices (not cancelled)
         if (frm.doc.docstatus === 0 || frm.doc.docstatus === 1) {
-            frm.add_custom_button(__('كشف حساب العميل'), function() {
-                // Check if customer is selected
+            frm.add_custom_button(__('الفواتير المتأخرة'), function() {
                 if (!frm.doc.customer) {
                     frappe.msgprint(__('يرجى تحديد العميل أولاً'));
                     return;
                 }
 
-                // Show dialog to select date range
-                let dialog = new frappe.ui.Dialog({
-                    title: __('طباعة كشف حساب العميل'),
-                    fields: [
-                        {
-                            fieldtype: 'Link',
-                            fieldname: 'customer',
-                            label: __('العميل'),
-                            options: 'Customer',
-                            default: frm.doc.customer,
-                            read_only: 1
+                frappe.call({
+                    method: 'frappe.client.get_list',
+                    args: {
+                        doctype: 'Sales Invoice',
+                        filters: {
+                            customer: frm.doc.customer,
+                            docstatus: 1,
+                            outstanding_amount: ['>', 0],
+                            due_date: ['<', frappe.datetime.get_today()]
                         },
-                        {
-                            fieldtype: 'Link',
-                            fieldname: 'company',
-                            label: __('الشركة'),
-                            options: 'Company',
-                            default: frm.doc.company,
-                            reqd: 1
-                        },
-                        {
-                            fieldtype: 'Column Break'
-                        },
-                        {
-                            fieldtype: 'Date',
-                            fieldname: 'from_date',
-                            label: __('من تاريخ'),
-                            default: frappe.datetime.add_months(frappe.datetime.get_today(), -12),
-                            reqd: 1
-                        },
-                        {
-                            fieldtype: 'Date',
-                            fieldname: 'to_date',
-                            label: __('إلى تاريخ'),
-                            default: frappe.datetime.get_today(),
-                            reqd: 1
+                        fields: ['name', 'posting_date', 'due_date', 'grand_total', 'outstanding_amount'],
+                        order_by: 'due_date asc'
+                    },
+                    freeze: true,
+                    freeze_message: __('جاري تحميل الفواتير المتأخرة...'),
+                    callback: function(r) {
+                        if (r.message && r.message.length > 0) {
+                            let invoices = r.message;
+                            let total_outstanding = 0;
+                            let rows = '';
+
+                            invoices.forEach(function(inv) {
+                                total_outstanding += inv.outstanding_amount;
+                                rows += `<tr>
+                                    <td><a href="/app/sales-invoice/${inv.name}" target="_blank">${inv.name}</a></td>
+                                    <td>${inv.posting_date}</td>
+                                    <td>${inv.due_date}</td>
+                                    <td>${frappe.format(inv.grand_total, {fieldtype: 'Currency'})}</td>
+                                    <td>${frappe.format(inv.outstanding_amount, {fieldtype: 'Currency'})}</td>
+                                </tr>`;
+                            });
+
+                            let html = `
+                                <div style="direction: rtl; text-align: right;">
+                                    <h4>الفواتير المتأخرة للعميل: ${frm.doc.customer_name || frm.doc.customer}</h4>
+                                    <table class="table table-bordered table-sm">
+                                        <thead style="background-color: #f8d7da;">
+                                            <tr>
+                                                <th>رقم الفاتورة</th>
+                                                <th>تاريخ الفاتورة</th>
+                                                <th>تاريخ الاستحقاق</th>
+                                                <th>إجمالي الفاتورة</th>
+                                                <th>المبلغ المتبقي</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>${rows}</tbody>
+                                        <tfoot style="background-color: #fff3cd; font-weight: bold;">
+                                            <tr>
+                                                <td colspan="4">إجمالي المبالغ المتأخرة</td>
+                                                <td>${frappe.format(total_outstanding, {fieldtype: 'Currency'})}</td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                    <p><strong>عدد الفواتير المتأخرة:</strong> ${invoices.length}</p>
+                                </div>
+                            `;
+
+                            frappe.msgprint({
+                                title: __('الفواتير المتأخرة'),
+                                message: html,
+                                wide: true
+                            });
+                        } else {
+                            frappe.msgprint(__('لا توجد فواتير متأخرة لهذا العميل'));
                         }
-                    ],
-                    primary_action_label: __('طباعة'),
-                    primary_action: function(values) {
-                        dialog.hide();
-                        frappe.call({
-                            method: 'expenses_management.expenses_management.api.customer_ledger.get_customer_ledger_html',
-                            args: {
-                                customer: values.customer,
-                                company: values.company,
-                                from_date: values.from_date,
-                                to_date: values.to_date
-                            },
-                            freeze: true,
-                            freeze_message: __('جاري تحميل كشف الحساب...'),
-                            callback: function(r) {
-                                if (r.message) {
-                                    let printWindow = window.open('', '_blank', 'width=1200,height=800');
-                                    printWindow.document.write(r.message);
-                                    printWindow.document.close();
-                                    printWindow.onload = function() {
-                                        setTimeout(function() {
-                                            printWindow.print();
-                                        }, 500);
-                                    };
-                                }
-                            }
-                        });
                     }
                 });
-                dialog.show();
             }).addClass('btn-primary');
         }
     }
