@@ -314,7 +314,7 @@ def validate_customer_credit(doc, method=None):
     Credit Limit Logic:
     1. If customer has NO credit limit (0 or not set) → Invoice must be fully paid
     2. If customer HAS credit limit → Check if total outstanding would exceed the limit
-    3. Also check for overdue invoices based on credit days
+    3. Also check for overdue invoices based on due_date
     """
 
     # Skip if no customer
@@ -390,80 +390,87 @@ def validate_customer_credit(doc, method=None):
                 title=_("خطأ - تجاوز الحد الائتماني")
             )
 
-    # Case 3: Check for overdue invoices
-    credit_days = 0
-    if doc.payment_terms_template:
-        payment_terms = frappe.get_doc("Payment Terms Template", doc.payment_terms_template)
-        if payment_terms.terms and len(payment_terms.terms) > 0:
-            credit_days = frappe.utils.cint(payment_terms.terms[0].credit_days or 0)
-
-    # Get overdue invoices (exclude credit notes & negative outstanding)
+    # Case 3: Check for overdue invoices using due_date (FIXED)
     today = frappe.utils.today()
-    invoices = frappe.get_all(
-        "Sales Invoice",
-        filters=[
-            ["customer", "=", doc.customer],
-            ["docstatus", "=", 1],
-            ["is_return", "=", 0]
-        ],
-        fields=["name", "posting_date", "outstanding_amount"],
-        limit=100
-    )
-
-    total_overdue = 0
-    for inv in invoices:
-        amount = frappe.utils.flt(inv.outstanding_amount)
-
-        # Skip negative or zero balances
-        if amount <= 0:
-            continue
-
-        credit_limit_date = frappe.utils.add_days(inv.posting_date, credit_days)
-        if frappe.utils.date_diff(today, credit_limit_date) > 0:
-            total_overdue += amount
+    
+    # ✅ Get overdue invoices using due_date directly
+    overdue_invoices = frappe.db.sql("""
+        SELECT name, due_date, outstanding_amount
+        FROM `tabSales Invoice`
+        WHERE customer = %s
+          AND company = %s
+          AND docstatus = 1
+          AND is_return = 0
+          AND outstanding_amount > 0
+          AND due_date < %s
+        ORDER BY due_date ASC
+    """, (doc.customer, doc.company, today), as_dict=True)
+    
+    # Calculate total overdue
+    total_overdue = sum(frappe.utils.flt(inv.outstanding_amount) for inv in overdue_invoices)
 
     # Block only if overdue total is >= 10 SAR
     if total_overdue >= 10:
+        # Build invoice details (show first 5)
+        invoice_details = ""
+        for i, inv in enumerate(overdue_invoices[:5]):
+            invoice_details += "• {0} - {1} ريال (تاريخ الاستحقاق: {2})<br>".format(
+                inv.name, 
+                round(inv.outstanding_amount, 2),
+                inv.due_date
+            )
+        
+        if len(overdue_invoices) > 5:
+            invoice_details += "• ... و {0} فواتير أخرى".format(len(overdue_invoices) - 5)
+        
+        message = _(
+            "لدى العميل مبالغ متأخرة عن تاريخ الاستحقاق.<br><br>"
+            "<b>إجمالي المبالغ المتأخرة: {0} ريال</b><br><br>"
+            "<b>الفواتير المتأخرة:</b><br>{1}"
+        ).format(round(total_overdue, 2), invoice_details)
+        
         if skip_blocking:
             frappe.msgprint(
-                _("تحذير: لدى العميل مبالغ متأخرة عن فترة الائتمان (إجمالي: {0} ريال).").format(total_overdue),
-                title=_("تحذير"),
+                msg=message,
+                title=_("تحذير: مبالغ متأخرة"),
                 indicator="orange"
             )
         else:
             frappe.throw(
-                _("لا يمكن الإرسال! لدى العميل مبالغ متأخرة عن فترة الائتمان (إجمالي: {0} ريال).").format(total_overdue),
-                title=_("خطأ في فترة الائتمان")
+                msg=_("لا يمكن الإرسال! ") + message,
+                title=_("خطأ - فواتير متأخرة")
             )
 
 
 def get_customer_total_outstanding(customer, company, exclude_invoice=None):
     """Get total outstanding amount for a customer in a specific company"""
-
-    filters = [
-        ["customer", "=", customer],
-        ["company", "=", company],
-        ["docstatus", "=", 1],
-        ["outstanding_amount", ">", 0]
-    ]
-
+    
     if exclude_invoice:
-        filters.append(["name", "!=", exclude_invoice])
-
-    result = frappe.db.sql(
-        """
-        SELECT COALESCE(SUM(outstanding_amount), 0) as total_outstanding
-        FROM `tabSales Invoice`
-        WHERE customer = %s
-        AND company = %s
-        AND docstatus = 1
-        AND outstanding_amount > 0
-        {exclude_clause}
-        """.format(
-            exclude_clause="AND name != %s" if exclude_invoice else ""
-        ),
-        (customer, company, exclude_invoice) if exclude_invoice else (customer, company),
-        as_dict=True
-    )
+        result = frappe.db.sql(
+            """
+            SELECT COALESCE(SUM(outstanding_amount), 0) as total_outstanding
+            FROM `tabSales Invoice`
+            WHERE customer = %s
+              AND company = %s
+              AND docstatus = 1
+              AND outstanding_amount > 0
+              AND name != %s
+            """,
+            (customer, company, exclude_invoice),
+            as_dict=True
+        )
+    else:
+        result = frappe.db.sql(
+            """
+            SELECT COALESCE(SUM(outstanding_amount), 0) as total_outstanding
+            FROM `tabSales Invoice`
+            WHERE customer = %s
+              AND company = %s
+              AND docstatus = 1
+              AND outstanding_amount > 0
+            """,
+            (customer, company),
+            as_dict=True
+        )
 
     return frappe.utils.flt(result[0].total_outstanding) if result else 0
