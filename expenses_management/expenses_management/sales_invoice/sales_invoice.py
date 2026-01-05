@@ -314,7 +314,7 @@ def validate_customer_credit(doc, method=None):
     Credit Limit Logic:
     1. If customer has NO credit limit (0 or not set) → Invoice must be fully paid
     2. If customer HAS credit limit → Check if total outstanding would exceed the limit
-    3. Also check for overdue invoices based on due_date
+    3. Also check for overdue invoices based on due_date (only if outstanding > 1)
     """
 
     # Skip if no customer
@@ -393,7 +393,7 @@ def validate_customer_credit(doc, method=None):
     # Case 3: Check for overdue invoices using due_date
     today = frappe.utils.today()
     
-    # ✅ Get overdue invoices with outstanding > 1 SAR
+    # ✅ Get overdue invoices - only where outstanding > 1 SAR
     overdue_invoices = frappe.db.sql("""
         SELECT name, due_date, outstanding_amount
         FROM `tabSales Invoice`
@@ -406,11 +406,11 @@ def validate_customer_credit(doc, method=None):
         ORDER BY due_date ASC
     """, (doc.customer, doc.company, today), as_dict=True)
     
-    # Calculate total overdue
+    # Calculate total overdue (only amounts > 1 are included)
     total_overdue = sum(frappe.utils.flt(inv.outstanding_amount) for inv in overdue_invoices)
 
-    # ✅ Block only if overdue total is > 1 SAR
-    if total_overdue > 1:
+    # ✅ Block if there are any overdue invoices (total > 0 means we have invoices with outstanding > 1)
+    if total_overdue > 0:
         # Build invoice details (show first 5)
         invoice_details = ""
         for i, inv in enumerate(overdue_invoices[:5]):
