@@ -390,10 +390,10 @@ def validate_customer_credit(doc, method=None):
                 title=_("خطأ - تجاوز الحد الائتماني")
             )
 
-    # Case 3: Check for overdue invoices using due_date (FIXED)
+    # Case 3: Check for overdue invoices using due_date
     today = frappe.utils.today()
     
-    # ✅ Get overdue invoices using due_date directly
+    # ✅ Get overdue invoices with outstanding > 1 SAR
     overdue_invoices = frappe.db.sql("""
         SELECT name, due_date, outstanding_amount
         FROM `tabSales Invoice`
@@ -401,7 +401,7 @@ def validate_customer_credit(doc, method=None):
           AND company = %s
           AND docstatus = 1
           AND is_return = 0
-          AND outstanding_amount > 0
+          AND outstanding_amount > 1
           AND due_date < %s
         ORDER BY due_date ASC
     """, (doc.customer, doc.company, today), as_dict=True)
@@ -409,8 +409,8 @@ def validate_customer_credit(doc, method=None):
     # Calculate total overdue
     total_overdue = sum(frappe.utils.flt(inv.outstanding_amount) for inv in overdue_invoices)
 
-    # Block only if overdue total is >= 10 SAR
-    if total_overdue >= 10:
+    # ✅ Block only if overdue total is > 1 SAR
+    if total_overdue > 1:
         # Build invoice details (show first 5)
         invoice_details = ""
         for i, inv in enumerate(overdue_invoices[:5]):
