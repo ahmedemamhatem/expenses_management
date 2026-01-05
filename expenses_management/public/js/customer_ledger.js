@@ -10,7 +10,9 @@ frappe.ui.form.on("Customer", {
                             customer: frm.doc.name,
                             docstatus: 1,
                             outstanding_amount: ['>', 0],
-                            due_date: ['<', frappe.datetime.get_today()]
+                            due_date: ['<', frappe.datetime.get_today()],
+                            is_return: 0,
+                            status: ['!=', 'Credit Note Issued']
                         },
                         fields: ['name', 'posting_date', 'due_date', 'grand_total', 'outstanding_amount'],
                         order_by: 'due_date asc'
