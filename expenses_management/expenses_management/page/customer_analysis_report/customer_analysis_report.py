@@ -138,10 +138,8 @@ def calculate_period_totals_from_invoices(values, extra_where):
             COUNT(DISTINCT si.customer) as total_customers,
             COALESCE(SUM(CASE WHEN si.is_return = 0 THEN si.base_net_total ELSE 0 END), 0) as period_sales,
             COALESCE(SUM(CASE WHEN si.is_return = 1 THEN ABS(si.base_net_total) ELSE 0 END), 0) as period_returns,
-            COALESCE(SUM(si.outstanding_amount), 0) as total_balance,
             COUNT(CASE WHEN si.is_return = 0 THEN 1 END) as invoice_count_period,
-            COUNT(CASE WHEN si.is_return = 1 THEN 1 END) as return_count_period,
-            COALESCE(SUM(CASE WHEN si.outstanding_amount > 0 AND si.due_date <= CURDATE() THEN si.outstanding_amount ELSE 0 END), 0) as total_due
+            COUNT(CASE WHEN si.is_return = 1 THEN 1 END) as return_count_period
         FROM `tabSales Invoice` si
         {customer_join}
         WHERE si.docstatus = 1
@@ -150,7 +148,28 @@ def calculate_period_totals_from_invoices(values, extra_where):
         {extra_where}
     """, values, as_dict=1)
 
+    # Get all-time balance and due for customers in the period (not just period balance)
+    # This shows the actual outstanding balance for these customers
+    all_time_balance_query = frappe.db.sql(f"""
+        SELECT
+            COALESCE(SUM(si_all.outstanding_amount), 0) as total_balance,
+            COALESCE(SUM(CASE WHEN si_all.outstanding_amount > 0 AND si_all.due_date <= CURDATE() THEN si_all.outstanding_amount ELSE 0 END), 0) as total_due
+        FROM `tabSales Invoice` si_all
+        WHERE si_all.docstatus = 1
+        AND si_all.company = %(company)s
+        AND si_all.customer IN (
+            SELECT DISTINCT si.customer
+            FROM `tabSales Invoice` si
+            {customer_join}
+            WHERE si.docstatus = 1
+            AND si.company = %(company)s
+            AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+            {extra_where}
+        )
+    """, values, as_dict=1)
+
     inv_data = combined_totals[0] if combined_totals else {}
+    balance_data = all_time_balance_query[0] if all_time_balance_query else {}
 
     # Combined query for revenue, cost, weight, and items
     # Priority: 1. incoming_rate, 2. DN Stock Ledger valuation, 3. Bin valuation, 4. Avg Bin valuation
@@ -190,8 +209,8 @@ def calculate_period_totals_from_invoices(values, extra_where):
         "total_customers": cint(inv_data.get("total_customers", 0)),
         "total_purchase_period": round(flt(inv_data.get("period_sales", 0)) - flt(inv_data.get("period_returns", 0)), 2),
         "total_purchase_all_time": round(flt(inv_data.get("period_sales", 0)) - flt(inv_data.get("period_returns", 0)), 2),
-        "total_balance": round(flt(inv_data.get("total_balance", 0)), 2),
-        "total_due": round(flt(inv_data.get("total_due", 0)), 2),
+        "total_balance": round(flt(balance_data.get("total_balance", 0)), 2),
+        "total_due": round(flt(balance_data.get("total_due", 0)), 2),
         "revenue_period": round(revenue_period, 2),
         "revenue_all_time": round(revenue_period, 2),
         "invoice_count_period": cint(inv_data.get("invoice_count_period", 0)),
@@ -425,7 +444,7 @@ def get_customers_analysis_optimized(values, extra_where, use_credit_days=False)
 
     invoice_dates_map = {d.customer: d for d in invoice_dates}
 
-    # BATCH 10: Last invoice details - optimized with window function approach
+    # BATCH 10: Last invoice details BEFORE the from_date - to show previous purchase history
     last_invoice_details = frappe.db.sql("""
         SELECT
             t.customer,
@@ -444,6 +463,7 @@ def get_customers_analysis_optimized(values, extra_where, use_credit_days=False)
             AND si.company = %(company)s
             AND si.customer IN %(customers)s
             AND si.is_return = 0
+            AND si.posting_date < %(from_date)s
             AND si.posting_date = (
                 SELECT MAX(si2.posting_date)
                 FROM `tabSales Invoice` si2
@@ -451,6 +471,7 @@ def get_customers_analysis_optimized(values, extra_where, use_credit_days=False)
                 AND si2.docstatus = 1
                 AND si2.company = %(company)s
                 AND si2.is_return = 0
+                AND si2.posting_date < %(from_date)s
             )
             GROUP BY si.customer
         ) t
@@ -465,7 +486,7 @@ def get_customers_analysis_optimized(values, extra_where, use_credit_days=False)
             GROUP BY item_code
         ) bin_avg ON bin_avg.item_code = sii.item_code
         GROUP BY t.customer, t.last_invoice_id, t.last_invoice_date, t.last_invoice_amount
-    """, {"company": company, "customers": customer_list}, as_dict=1)
+    """, {"company": company, "customers": customer_list, "from_date": from_date}, as_dict=1)
 
     last_invoice_map = {d.customer: d for d in last_invoice_details}
 
@@ -610,7 +631,7 @@ def get_customers_analysis_optimized(values, extra_where, use_credit_days=False)
             "top_item_group_2": top_group_2.get("item_group", ""),
             "top_group_amount_2": flt(top_group_2.get("group_amount", 0)),
             "first_invoice_date": str(inv_dates.get("first_invoice_date", "")) if inv_dates.get("first_invoice_date") else "",
-            "last_invoice_date": str(inv_dates.get("last_invoice_date", "")) if inv_dates.get("last_invoice_date") else "",
+            "last_invoice_date": str(last_inv.get("last_invoice_date", "")) if last_inv.get("last_invoice_date") else "",
             "last_invoice_id": last_inv.get("last_invoice_id", ""),
             "last_invoice_amount": flt(last_inv.get("last_invoice_amount", 0)),
             "last_invoice_profit": flt(last_inv.get("last_invoice_profit", 0)),

@@ -157,7 +157,8 @@ doctype_js = {
 # Override standard doctype classes
 
 override_doctype_class = {
-	"Salary Slip": "expenses_management.overrides.salary_slip.CustomSalarySlip"
+	"Salary Slip": "expenses_management.overrides.salary_slip.CustomSalarySlip",
+	"Leave Encashment": "expenses_management.overrides.leave_encashment.CustomLeaveEncashment"
 }
 
 # Document Events
