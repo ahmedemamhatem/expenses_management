@@ -388,8 +388,9 @@ def validate_customer_credit(doc, method=None):
         return
 
     # Case 2: Has credit limit → Check if GL balance would exceed limit
-    # Use the higher of GL balance or invoice outstanding to be conservative
-    current_balance = max(current_gl_balance, current_invoice_outstanding)
+    # GL balance is the source of truth (includes all transactions)
+    # Invoice outstanding may be wrong if payments weren't linked
+    current_balance = current_gl_balance
     new_total_balance = current_balance + invoice_outstanding
 
     if new_total_balance > customer_credit_limit and not bypass_credit_limit:
@@ -398,8 +399,8 @@ def validate_customer_credit(doc, method=None):
         # Show both GL balance and invoice outstanding if they differ significantly
         balance_note = ""
         if abs(current_gl_balance - current_invoice_outstanding) > 1:
-            balance_note = _("<br><small>رصيد GL: {0} | رصيد الفواتير: {1}</small>").format(
-                round(current_gl_balance, 2), round(current_invoice_outstanding, 2)
+            balance_note = _("<br><small>رصيد الفواتير غير المسددة: {0}</small>").format(
+                round(current_invoice_outstanding, 2)
             )
 
         if skip_blocking:
