@@ -308,13 +308,40 @@ def get_user_pos_warehouse():
     return None
 
 
+def get_customer_gl_balance(customer, company):
+    """Get customer balance from GL Entry for a specific company.
+    This includes all transactions: invoices, payments, journal entries.
+    Positive = customer owes money, Negative = customer has credit/advance.
+    """
+    if not customer or not company:
+        return 0
+
+    result = frappe.db.sql(
+        """
+        SELECT COALESCE(SUM(debit - credit), 0) as balance
+        FROM `tabGL Entry`
+        WHERE party_type = 'Customer'
+        AND party = %s
+        AND company = %s
+        AND is_cancelled = 0
+        """,
+        (customer, company),
+        as_dict=True,
+    )
+
+    return frappe.utils.flt(result[0].balance) if result else 0
+
+
 def validate_customer_credit(doc, method=None):
     """Validate customer credit limit and overdue amounts before submitting Sales Invoice
 
     Credit Limit Logic:
     1. If customer has NO credit limit (0 or not set) → Invoice must be fully paid
-    2. If customer HAS credit limit → Check if total outstanding would exceed the limit
+    2. If customer HAS credit limit → Check if total balance (from GL) would exceed the limit
     3. Also check for overdue invoices based on due_date (only if outstanding > 1)
+
+    Note: Uses GL Entry balance which includes all transactions (invoices, payments, journal entries)
+    not just invoice outstanding amounts, to catch unlinked payments and JE adjustments.
     """
 
     # Skip if no customer
@@ -340,8 +367,11 @@ def validate_customer_credit(doc, method=None):
             bypass_credit_limit = cl.get("bypass_credit_limit_check") == 1
             break
 
-    # Get current total outstanding for this customer (excluding current invoice)
-    current_outstanding = get_customer_total_outstanding(doc.customer, doc.company, exclude_invoice=doc.name)
+    # Get current GL balance for this customer (includes all: invoices, payments, JEs)
+    current_gl_balance = get_customer_gl_balance(doc.customer, doc.company)
+
+    # Get invoice outstanding for comparison/display
+    current_invoice_outstanding = get_customer_total_outstanding(doc.customer, doc.company, exclude_invoice=doc.name)
 
     # Outstanding amount from this invoice
     invoice_outstanding = frappe.utils.flt(doc.outstanding_amount)
@@ -357,21 +387,31 @@ def validate_customer_credit(doc, method=None):
         # If fully paid, allow and skip other checks
         return
 
-    # Case 2: Has credit limit → Check if would exceed limit
-    new_total_outstanding = current_outstanding + invoice_outstanding
+    # Case 2: Has credit limit → Check if GL balance would exceed limit
+    # Use the higher of GL balance or invoice outstanding to be conservative
+    current_balance = max(current_gl_balance, current_invoice_outstanding)
+    new_total_balance = current_balance + invoice_outstanding
 
-    if new_total_outstanding > customer_credit_limit and not bypass_credit_limit:
-        exceeded_by = new_total_outstanding - customer_credit_limit
+    if new_total_balance > customer_credit_limit and not bypass_credit_limit:
+        exceeded_by = new_total_balance - customer_credit_limit
+
+        # Show both GL balance and invoice outstanding if they differ significantly
+        balance_note = ""
+        if abs(current_gl_balance - current_invoice_outstanding) > 1:
+            balance_note = _("<br><small>رصيد GL: {0} | رصيد الفواتير: {1}</small>").format(
+                round(current_gl_balance, 2), round(current_invoice_outstanding, 2)
+            )
+
         if skip_blocking:
             frappe.msgprint(
                 _("تحذير: سيتجاوز العميل الحد الائتماني!<br><br>"
                   "الحد الائتماني: <b>{0}</b> ريال<br>"
-                  "الرصيد الحالي: <b>{1}</b> ريال<br>"
+                  "الرصيد الحالي: <b>{1}</b> ريال{5}<br>"
                   "هذه الفاتورة: <b>{2}</b> ريال<br>"
                   "الإجمالي الجديد: <b>{3}</b> ريال<br>"
                   "التجاوز: <b>{4}</b> ريال").format(
-                    customer_credit_limit, current_outstanding, invoice_outstanding,
-                    new_total_outstanding, exceeded_by
+                    customer_credit_limit, round(current_balance, 2), invoice_outstanding,
+                    round(new_total_balance, 2), round(exceeded_by, 2), balance_note
                 ),
                 title=_("تحذير - تجاوز الحد الائتماني"),
                 indicator="orange"
@@ -380,12 +420,12 @@ def validate_customer_credit(doc, method=None):
             frappe.throw(
                 _("لا يمكن الإرسال! سيتجاوز العميل الحد الائتماني.<br><br>"
                   "الحد الائتماني: <b>{0}</b> ريال<br>"
-                  "الرصيد الحالي: <b>{1}</b> ريال<br>"
+                  "الرصيد الحالي: <b>{1}</b> ريال{5}<br>"
                   "هذه الفاتورة: <b>{2}</b> ريال<br>"
                   "الإجمالي الجديد: <b>{3}</b> ريال<br>"
                   "التجاوز: <b>{4}</b> ريال").format(
-                    customer_credit_limit, current_outstanding, invoice_outstanding,
-                    new_total_outstanding, exceeded_by
+                    customer_credit_limit, round(current_balance, 2), invoice_outstanding,
+                    round(new_total_balance, 2), round(exceeded_by, 2), balance_note
                 ),
                 title=_("خطأ - تجاوز الحد الائتماني")
             )
