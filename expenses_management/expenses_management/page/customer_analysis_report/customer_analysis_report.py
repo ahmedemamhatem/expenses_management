@@ -298,11 +298,34 @@ def calculate_period_totals(values, extra_where, customer_join, customer_where):
         {extra_where}
     """, values, as_dict=1)
 
-    # Get revenue (with DN and SLE join for cost calculation using valuation_rate)
+    # Get revenue (with DN/SLE join for cost, fallback to last Purchase Invoice rate in same branch)
     revenue_totals = frappe.db.sql(f"""
         SELECT
             COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.base_net_amount ELSE -sii.base_net_amount END), 0) as net_sales,
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * COALESCE(sle.valuation_rate, 0) ELSE -sii.stock_qty * COALESCE(sle.valuation_rate, 0) END), 0) as cost_of_goods
+            COALESCE(SUM(CASE WHEN si.is_return = 0
+                THEN sii.stock_qty * COALESCE(sle.valuation_rate, (
+                    SELECT pii.base_rate
+                    FROM `tabPurchase Invoice Item` pii
+                    INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+                    WHERE pii.item_code = sii.item_code
+                    AND pi.docstatus = 1
+                    AND pi.branch = si.branch
+                    AND pi.posting_date <= si.posting_date
+                    ORDER BY pi.posting_date DESC, pi.creation DESC
+                    LIMIT 1
+                ), 0)
+                ELSE -sii.stock_qty * COALESCE(sle.valuation_rate, (
+                    SELECT pii.base_rate
+                    FROM `tabPurchase Invoice Item` pii
+                    INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+                    WHERE pii.item_code = sii.item_code
+                    AND pi.docstatus = 1
+                    AND pi.branch = si.branch
+                    AND pi.posting_date <= si.posting_date
+                    ORDER BY pi.posting_date DESC, pi.creation DESC
+                    LIMIT 1
+                ), 0)
+            END), 0) as cost_of_goods
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
         LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
@@ -427,12 +450,35 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
 
     all_time_map = {d.customer: d for d in all_time_data}
 
-    # All-time revenue (using valuation_rate from Stock Ledger Entry)
+    # All-time revenue (using valuation_rate from SLE, fallback to last Purchase Invoice rate in same branch)
     all_time_revenue = frappe.db.sql("""
         SELECT
             si.customer,
             COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.base_net_amount ELSE -sii.base_net_amount END), 0) as net_sales,
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * COALESCE(sle.valuation_rate, 0) ELSE -sii.stock_qty * COALESCE(sle.valuation_rate, 0) END), 0) as cost_of_goods,
+            COALESCE(SUM(CASE WHEN si.is_return = 0
+                THEN sii.stock_qty * COALESCE(sle.valuation_rate, (
+                    SELECT pii.base_rate
+                    FROM `tabPurchase Invoice Item` pii
+                    INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+                    WHERE pii.item_code = sii.item_code
+                    AND pi.docstatus = 1
+                    AND pi.branch = si.branch
+                    AND pi.posting_date <= si.posting_date
+                    ORDER BY pi.posting_date DESC, pi.creation DESC
+                    LIMIT 1
+                ), 0)
+                ELSE -sii.stock_qty * COALESCE(sle.valuation_rate, (
+                    SELECT pii.base_rate
+                    FROM `tabPurchase Invoice Item` pii
+                    INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+                    WHERE pii.item_code = sii.item_code
+                    AND pi.docstatus = 1
+                    AND pi.branch = si.branch
+                    AND pi.posting_date <= si.posting_date
+                    ORDER BY pi.posting_date DESC, pi.creation DESC
+                    LIMIT 1
+                ), 0)
+            END), 0) as cost_of_goods,
             COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.qty ELSE 0 END), 0) as total_qty
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
@@ -446,12 +492,35 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
 
     all_time_revenue_map = {d.customer: d for d in all_time_revenue}
 
-    # Period revenue (using valuation_rate from Stock Ledger Entry)
+    # Period revenue (using valuation_rate from SLE, fallback to last Purchase Invoice rate in same branch)
     period_revenue = frappe.db.sql(f"""
         SELECT
             si.customer,
             COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.base_net_amount ELSE -sii.base_net_amount END), 0) as net_sales,
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * COALESCE(sle.valuation_rate, 0) ELSE -sii.stock_qty * COALESCE(sle.valuation_rate, 0) END), 0) as cost_of_goods
+            COALESCE(SUM(CASE WHEN si.is_return = 0
+                THEN sii.stock_qty * COALESCE(sle.valuation_rate, (
+                    SELECT pii.base_rate
+                    FROM `tabPurchase Invoice Item` pii
+                    INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+                    WHERE pii.item_code = sii.item_code
+                    AND pi.docstatus = 1
+                    AND pi.branch = si.branch
+                    AND pi.posting_date <= si.posting_date
+                    ORDER BY pi.posting_date DESC, pi.creation DESC
+                    LIMIT 1
+                ), 0)
+                ELSE -sii.stock_qty * COALESCE(sle.valuation_rate, (
+                    SELECT pii.base_rate
+                    FROM `tabPurchase Invoice Item` pii
+                    INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+                    WHERE pii.item_code = sii.item_code
+                    AND pi.docstatus = 1
+                    AND pi.branch = si.branch
+                    AND pi.posting_date <= si.posting_date
+                    ORDER BY pi.posting_date DESC, pi.creation DESC
+                    LIMIT 1
+                ), 0)
+            END), 0) as cost_of_goods
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
         LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
@@ -515,20 +584,32 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
 
     invoice_dates_map = {d.customer: d for d in invoice_dates}
 
-    # Last invoice before period (using valuation_rate from Stock Ledger Entry)
+    # Last invoice before period (using valuation_rate from SLE, fallback to last Purchase Invoice rate in same branch)
     last_invoice_details = frappe.db.sql("""
         SELECT
             t.customer,
             t.last_invoice_id,
             t.last_invoice_date,
             t.last_invoice_amount,
-            COALESCE(SUM(sii.base_net_amount - (sii.stock_qty * COALESCE(sle.valuation_rate, 0))), 0) as last_invoice_profit
+            t.last_invoice_branch,
+            COALESCE(SUM(sii.base_net_amount - (sii.stock_qty * COALESCE(sle.valuation_rate, (
+                SELECT pii.base_rate
+                FROM `tabPurchase Invoice Item` pii
+                INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+                WHERE pii.item_code = sii.item_code
+                AND pi.docstatus = 1
+                AND pi.branch = t.last_invoice_branch
+                AND pi.posting_date <= t.last_invoice_date
+                ORDER BY pi.posting_date DESC, pi.creation DESC
+                LIMIT 1
+            ), 0))), 0) as last_invoice_profit
         FROM (
             SELECT
                 si.customer,
                 si.name as last_invoice_id,
                 si.posting_date as last_invoice_date,
-                si.base_grand_total as last_invoice_amount
+                si.base_grand_total as last_invoice_amount,
+                si.branch as last_invoice_branch
             FROM `tabSales Invoice` si
             WHERE si.docstatus = 1
             AND si.company = %(company)s
@@ -549,7 +630,7 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
         LEFT JOIN `tabSales Invoice Item` sii ON sii.parent = t.last_invoice_id
         LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
         LEFT JOIN `tabStock Ledger Entry` sle ON sle.voucher_type = 'Delivery Note' AND sle.voucher_no = dni.parent AND sle.voucher_detail_no = dni.name AND sle.is_cancelled = 0
-        GROUP BY t.customer, t.last_invoice_id, t.last_invoice_date, t.last_invoice_amount
+        GROUP BY t.customer, t.last_invoice_id, t.last_invoice_date, t.last_invoice_amount, t.last_invoice_branch
     """, {"company": company, "customers": customer_list, "from_date": from_date}, as_dict=1)
 
     last_invoice_map = {d.customer: d for d in last_invoice_details}
@@ -656,7 +737,17 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
             sii.stock_qty,
             sii.base_net_amount as total_amount,
             COALESCE(sii.base_net_amount * (si.base_total_taxes_and_charges / NULLIF(si.base_net_total, 0)), 0) as tax_amount,
-            sii.stock_qty * COALESCE(sle.valuation_rate, 0) as cost_of_goods,
+            sii.stock_qty * COALESCE(sle.valuation_rate, (
+                SELECT pii.base_rate
+                FROM `tabPurchase Invoice Item` pii
+                INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+                WHERE pii.item_code = sii.item_code
+                AND pi.docstatus = 1
+                AND pi.branch = si.branch
+                AND pi.posting_date <= si.posting_date
+                ORDER BY pi.posting_date DESC, pi.creation DESC
+                LIMIT 1
+            ), 0) as cost_of_goods,
             COALESCE(item.weight_per_unit, 1) as weight_per_unit
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
