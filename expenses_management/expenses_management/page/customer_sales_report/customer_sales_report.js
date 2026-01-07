@@ -1,8 +1,8 @@
-frappe.pages['customer-analysis-report'].on_page_load = function(wrapper) {
-	new CustomerAnalysisReport(wrapper);
+frappe.pages['customer-sales-report'].on_page_load = function(wrapper) {
+	new CustomerSalesReport(wrapper);
 }
 
-class CustomerAnalysisReport {
+class CustomerSalesReport {
 	constructor(wrapper) {
 		this.page = frappe.ui.make_app_page({
 			parent: wrapper,
@@ -43,7 +43,6 @@ class CustomerAnalysisReport {
 		this.page.clear_actions();
 		this.page.wrapper.find('.page-head').hide();
 
-		// Remove old floating elements (we'll use inline buttons now)
 		$('#floating-gear-btn').remove();
 		$('#floating-buttons-container').remove();
 	}
@@ -104,7 +103,6 @@ class CustomerAnalysisReport {
 					options: [
 						{ value: 'total_purchase_period', label: 'المبيعات في الفترة' },
 						{ value: 'total_purchase_all_time', label: 'إجمالي المبيعات' },
-						{ value: 'revenue_period', label: 'أرباح الفترة' },
 						{ value: 'total_balance', label: 'الرصيد' },
 						{ value: 'total_due', label: 'المستحق' },
 						{ value: 'invoice_count_period', label: 'عدد الفواتير' },
@@ -116,13 +114,12 @@ class CustomerAnalysisReport {
 			primary_action_label: 'عرض التقرير',
 			primary_action: function(values) {
 				me.filters = values;
-				me.filters.use_credit_days = true; // Always use credit days
+				me.filters.use_credit_days = true;
 				me.settings_dialog.hide();
 				me.generate_report();
 			}
 		});
 
-		// Dialog styles
 		this.settings_dialog.$wrapper.find('.modal-dialog').css({ 'max-width': '1100px', 'margin': '15px auto' });
 		this.settings_dialog.$wrapper.find('.modal-content').css({ 'border-radius': '16px', 'box-shadow': '0 25px 80px rgba(0, 0, 0, 0.35)', 'border': 'none', 'overflow': 'visible' });
 		this.settings_dialog.$wrapper.find('.modal-header').css({ 'background': 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', 'color': '#fff', 'border-bottom': '4px solid #6366f1', 'padding': '14px 24px' });
@@ -196,7 +193,6 @@ class CustomerAnalysisReport {
 				to_date = frappe.datetime.month_end(today);
 				break;
 			case 'last_month':
-				// Calculate last month manually
 				let lastMonthDate = new Date(d.getFullYear(), d.getMonth() - 1, 1);
 				let lastMonthEnd = new Date(d.getFullYear(), d.getMonth(), 0);
 				from_date = lastMonthDate.toISOString().split('T')[0];
@@ -207,11 +203,10 @@ class CustomerAnalysisReport {
 				to_date = frappe.datetime.quarter_end(today);
 				break;
 			case 'last_quarter':
-				// Calculate last quarter manually
 				let currentQuarter = Math.floor(d.getMonth() / 3);
 				let lastQuarterStart = new Date(d.getFullYear(), (currentQuarter - 1) * 3, 1);
 				if (currentQuarter === 0) {
-					lastQuarterStart = new Date(d.getFullYear() - 1, 9, 1); // Q4 of last year
+					lastQuarterStart = new Date(d.getFullYear() - 1, 9, 1);
 				}
 				let lastQuarterEnd = new Date(lastQuarterStart.getFullYear(), lastQuarterStart.getMonth() + 3, 0);
 				from_date = lastQuarterStart.toISOString().split('T')[0];
@@ -232,7 +227,6 @@ class CustomerAnalysisReport {
 	render_content() {
 		this.page.main.html(`
 			<style>
-				/* ===== ANIMATIONS ===== */
 				@keyframes fadeInUp {
 					from { opacity: 0; transform: translateY(20px); }
 					to { opacity: 1; transform: translateY(0); }
@@ -261,7 +255,6 @@ class CustomerAnalysisReport {
 					50% { transform: translateY(-5px); }
 				}
 
-				/* ===== FLOATING ACTION BUTTONS ===== */
 				.floating-actions {
 					position: fixed;
 					bottom: 30px;
@@ -311,8 +304,6 @@ class CustomerAnalysisReport {
 				.float-btn.reload-btn:hover i { animation: spin 0.6s ease-in-out; }
 				.float-btn.print-btn { background: linear-gradient(135deg, #2563eb, #3b82f6); animation-delay: 0.3s; }
 				.float-btn.print-btn:hover { box-shadow: 0 8px 30px rgba(37, 99, 235, 0.6); }
-				.float-btn.pdf-btn { background: linear-gradient(135deg, #dc2626, #ef4444); animation-delay: 0.4s; }
-				.float-btn.pdf-btn:hover { box-shadow: 0 8px 30px rgba(239, 68, 68, 0.6); }
 				.float-btn i { font-size: 18px; font-weight: 900; }
 				.float-btn .btn-tooltip {
 					position: absolute;
@@ -340,8 +331,7 @@ class CustomerAnalysisReport {
 				}
 				.float-btn:hover .btn-tooltip { opacity: 1; visibility: visible; left: 65px; }
 
-				/* ===== MAIN REPORT ===== */
-				.customer-analysis-report {
+				.customer-sales-report {
 					direction: rtl;
 					font-family: 'Segoe UI', Tahoma, sans-serif;
 					min-height: 100vh;
@@ -352,12 +342,11 @@ class CustomerAnalysisReport {
 					-moz-osx-font-smoothing: grayscale;
 					letter-spacing: 0.3px;
 				}
-				.customer-analysis-report * {
+				.customer-sales-report * {
 					font-weight: inherit;
 				}
 				#report-content { width: 100%; font-weight: 900; }
 
-				/* ===== SUMMARY HEADER ===== */
 				.summary-header {
 					background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
 					border-radius: 16px;
@@ -440,31 +429,18 @@ class CustomerAnalysisReport {
 					backdrop-filter: blur(10px);
 					animation: fadeInUp 0.5s ease-out backwards;
 				}
-				.summary-metric-box:nth-child(1) { animation-delay: 0.05s; }
-				.summary-metric-box:nth-child(2) { animation-delay: 0.1s; }
-				.summary-metric-box:nth-child(3) { animation-delay: 0.15s; }
-				.summary-metric-box:nth-child(4) { animation-delay: 0.2s; }
-				.summary-metric-box:nth-child(5) { animation-delay: 0.25s; }
-				.summary-metric-box:nth-child(6) { animation-delay: 0.3s; }
-				.summary-metric-box:nth-child(7) { animation-delay: 0.35s; }
-				.summary-metric-box:nth-child(8) { animation-delay: 0.4s; }
-				.summary-metric-box:nth-child(9) { animation-delay: 0.45s; }
-				.summary-metric-box:nth-child(10) { animation-delay: 0.5s; }
+				.summary-metric-box:nth-child(1) { animation-delay: 0.05s; border-color: rgba(99, 102, 241, 0.5); background: linear-gradient(145deg, rgba(99, 102, 241, 0.2) 0%, rgba(99, 102, 241, 0.05) 100%); }
+				.summary-metric-box:nth-child(2) { animation-delay: 0.1s; border-color: rgba(37, 99, 235, 0.5); background: linear-gradient(145deg, rgba(37, 99, 235, 0.2) 0%, rgba(37, 99, 235, 0.05) 100%); }
+				.summary-metric-box:nth-child(3) { animation-delay: 0.15s; border-color: rgba(16, 185, 129, 0.5); background: linear-gradient(145deg, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.05) 100%); }
+				.summary-metric-box:nth-child(4) { animation-delay: 0.2s; border-color: rgba(245, 158, 11, 0.5); background: linear-gradient(145deg, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.05) 100%); }
+				.summary-metric-box:nth-child(5) { animation-delay: 0.25s; border-color: rgba(139, 92, 246, 0.5); background: linear-gradient(145deg, rgba(139, 92, 246, 0.2) 0%, rgba(139, 92, 246, 0.05) 100%); }
+				.summary-metric-box:nth-child(6) { animation-delay: 0.3s; border-color: rgba(236, 72, 153, 0.5); background: linear-gradient(145deg, rgba(236, 72, 153, 0.2) 0%, rgba(236, 72, 153, 0.05) 100%); }
+				.summary-metric-box:nth-child(7) { animation-delay: 0.35s; border-color: rgba(220, 38, 38, 0.5); background: linear-gradient(145deg, rgba(220, 38, 38, 0.2) 0%, rgba(220, 38, 38, 0.05) 100%); }
 				.summary-metric-box:hover {
 					background: linear-gradient(145deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.1) 100%);
 					transform: translateY(-5px) scale(1.02);
 					box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
 				}
-				.summary-metric-box:nth-child(1) { border-color: rgba(99, 102, 241, 0.5); background: linear-gradient(145deg, rgba(99, 102, 241, 0.2) 0%, rgba(99, 102, 241, 0.05) 100%); }
-				.summary-metric-box:nth-child(2) { border-color: rgba(37, 99, 235, 0.5); background: linear-gradient(145deg, rgba(37, 99, 235, 0.2) 0%, rgba(37, 99, 235, 0.05) 100%); }
-				.summary-metric-box:nth-child(3) { border-color: rgba(16, 185, 129, 0.5); background: linear-gradient(145deg, rgba(16, 185, 129, 0.2) 0%, rgba(16, 185, 129, 0.05) 100%); }
-				.summary-metric-box:nth-child(4) { border-color: rgba(245, 158, 11, 0.5); background: linear-gradient(145deg, rgba(245, 158, 11, 0.2) 0%, rgba(245, 158, 11, 0.05) 100%); }
-				.summary-metric-box:nth-child(5) { border-color: rgba(139, 92, 246, 0.5); background: linear-gradient(145deg, rgba(139, 92, 246, 0.2) 0%, rgba(139, 92, 246, 0.05) 100%); }
-				.summary-metric-box:nth-child(6) { border-color: rgba(236, 72, 153, 0.5); background: linear-gradient(145deg, rgba(236, 72, 153, 0.2) 0%, rgba(236, 72, 153, 0.05) 100%); }
-				.summary-metric-box:nth-child(7) { border-color: rgba(34, 211, 238, 0.5); background: linear-gradient(145deg, rgba(34, 211, 238, 0.2) 0%, rgba(34, 211, 238, 0.05) 100%); }
-				.summary-metric-box:nth-child(8) { border-color: rgba(220, 38, 38, 0.5); background: linear-gradient(145deg, rgba(220, 38, 38, 0.2) 0%, rgba(220, 38, 38, 0.05) 100%); }
-				.summary-metric-box:nth-child(9) { border-color: rgba(5, 150, 105, 0.5); background: linear-gradient(145deg, rgba(5, 150, 105, 0.2) 0%, rgba(5, 150, 105, 0.05) 100%); }
-				.summary-metric-box:nth-child(10) { border-color: rgba(251, 191, 36, 0.5); background: linear-gradient(145deg, rgba(251, 191, 36, 0.2) 0%, rgba(251, 191, 36, 0.05) 100%); }
 				.summary-metric-lbl { font-size: 14px; color: #cbd5e1; font-weight: 800; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
 				.summary-metric-val { font-size: 22px; font-weight: 900; text-shadow: 0 1px 2px rgba(0,0,0,0.1); }
 				.summary-metric-box:nth-child(1) .summary-metric-val { color: #a5b4fc; }
@@ -473,17 +449,9 @@ class CustomerAnalysisReport {
 				.summary-metric-box:nth-child(4) .summary-metric-val { color: #fcd34d; }
 				.summary-metric-box:nth-child(5) .summary-metric-val { color: #c4b5fd; }
 				.summary-metric-box:nth-child(6) .summary-metric-val { color: #f9a8d4; }
-				.summary-metric-box:nth-child(7) .summary-metric-val { color: #67e8f9; }
-				.summary-metric-box:nth-child(8) .summary-metric-val { color: #fca5a5; }
-				.summary-metric-box:nth-child(9) .summary-metric-val { color: #6ee7b7; }
-				.summary-metric-box:nth-child(10) .summary-metric-val { color: #fcd34d; }
-				.summary-metric-val.pos { color: #6ee7b7 !important; }
+				.summary-metric-box:nth-child(7) .summary-metric-val { color: #fca5a5; }
 				.summary-metric-val.neg { color: #fca5a5 !important; }
-				.summary-metric-val .metric-pct { font-size: 15px; font-weight: 900; padding: 5px 12px; border-radius: 10px; margin-right: 8px; }
-				.summary-metric-val .metric-pct.pct-pos { background: linear-gradient(135deg, rgba(16, 185, 129, 0.5), rgba(16, 185, 129, 0.3)); color: #6ee7b7; border: 2px solid rgba(110, 231, 183, 0.5); text-shadow: 0 1px 2px rgba(0,0,0,0.2); }
-				.summary-metric-val .metric-pct.pct-neg { background: linear-gradient(135deg, rgba(239, 68, 68, 0.5), rgba(239, 68, 68, 0.3)); color: #fca5a5; border: 2px solid rgba(252, 165, 165, 0.5); text-shadow: 0 1px 2px rgba(0,0,0,0.2); }
 
-				/* ===== CUSTOMER CARD ===== */
 				.customer-card {
 					background: #fff;
 					border-radius: 14px;
@@ -526,25 +494,7 @@ class CustomerAnalysisReport {
 				.hstat.credit-days { background: rgba(16, 185, 129, 0.25); color: #6ee7b7; }
 				.hstat.top-group { background: rgba(245, 158, 11, 0.25); color: #fbbf24; }
 				.hstat.top-group i { color: #fbbf24; }
-				.customer-stats { display: flex; gap: 10px; flex-wrap: wrap; }
-				.stat-box {
-					text-align: center;
-					background: linear-gradient(145deg, rgba(99, 102, 241, 0.3) 0%, rgba(99, 102, 241, 0.15) 100%);
-					padding: 8px 16px;
-					border-radius: 10px;
-					backdrop-filter: blur(10px);
-					border: 1px solid rgba(99, 102, 241, 0.3);
-					transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-					min-width: 70px;
-				}
-				.stat-box:hover { background: linear-gradient(145deg, rgba(99, 102, 241, 0.45) 0%, rgba(99, 102, 241, 0.25) 100%); transform: scale(1.05) translateY(-2px); }
-				.stat-val { font-size: 16px; font-weight: 900; color: #a5b4fc; text-shadow: 0 1px 2px rgba(0,0,0,0.1); }
-				.stat-lbl { font-size: 10px; color: #cbd5e1; font-weight: 800; text-transform: uppercase; margin-top: 2px; letter-spacing: 0.3px; }
-				.stat-box.data-days-box { background: linear-gradient(145deg, rgba(16, 185, 129, 0.35) 0%, rgba(16, 185, 129, 0.15) 100%); border: 1px solid rgba(16, 185, 129, 0.45); }
-				.stat-box.data-days-box .stat-val { color: #6ee7b7; }
-				.stat-box.data-days-box .stat-lbl { color: #a7f3d0; font-size: 9px; font-weight: 800; }
 
-				/* ===== METRICS ROW ===== */
 				.metrics-row {
 					display: flex;
 					flex-wrap: nowrap;
@@ -568,27 +518,20 @@ class CustomerAnalysisReport {
 				.metric-box:nth-child(2) { border-color: #dbeafe; background: linear-gradient(135deg, #eff6ff 0%, #fff 100%); animation-delay: 0.1s; }
 				.metric-box:nth-child(3) { border-color: #d1fae5; background: linear-gradient(135deg, #ecfdf5 0%, #fff 100%); animation-delay: 0.15s; }
 				.metric-box:nth-child(4) { border-color: #fee2e2; background: linear-gradient(135deg, #fef2f2 0%, #fff 100%); animation-delay: 0.2s; }
-				.metric-box:nth-child(5) { border-color: #fef3c7; background: linear-gradient(135deg, #fffbeb 0%, #fff 100%); animation-delay: 0.25s; }
-				.metric-box:nth-child(6) { border-color: #d1fae5; background: linear-gradient(135deg, #ecfdf5 0%, #fff 100%); animation-delay: 0.3s; }
-				.metric-box:nth-child(7) { border-color: #fca5a5; background: linear-gradient(135deg, #fef2f2 0%, #fff 100%); animation-delay: 0.35s; }
+				.metric-box:nth-child(5) { border-color: #fca5a5; background: linear-gradient(135deg, #fef2f2 0%, #fff 100%); animation-delay: 0.25s; }
 				.metric-box:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 6px 15px rgba(0,0,0,0.1); }
 				.metric-lbl { font-size: 13px; font-weight: 900; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.3px; }
 				.metric-box:nth-child(1) .metric-lbl { color: #4f46e5; }
 				.metric-box:nth-child(2) .metric-lbl { color: #2563eb; }
 				.metric-box:nth-child(3) .metric-lbl { color: #059669; }
 				.metric-box:nth-child(4) .metric-lbl { color: #dc2626; }
-				.metric-box:nth-child(5) .metric-lbl { color: #b45309; }
-				.metric-box:nth-child(6) .metric-lbl { color: #047857; }
-				.metric-box:nth-child(7) .metric-lbl { color: #dc2626; }
+				.metric-box:nth-child(5) .metric-lbl { color: #dc2626; }
 				.metric-val { font-size: 18px; font-weight: 900; text-shadow: 0 1px 2px rgba(0,0,0,0.1); }
 				.metric-box:nth-child(1) .metric-val { color: #4f46e5; }
 				.metric-box:nth-child(2) .metric-val { color: #2563eb; }
 				.metric-box:nth-child(3) .metric-val { color: #059669; }
 				.metric-box:nth-child(4) .metric-val { color: #dc2626; }
-				.metric-box:nth-child(5) .metric-val { color: #b45309; }
-				.metric-box:nth-child(6) .metric-val { color: #047857; }
-				.metric-box:nth-child(7) .metric-val { color: #dc2626; }
-				.metric-val.pos { color: #059669 !important; }
+				.metric-box:nth-child(5) .metric-val { color: #dc2626; }
 				.metric-val.neg { color: #dc2626 !important; }
 				.days-badge {
 					display: inline-block;
@@ -604,22 +547,8 @@ class CustomerAnalysisReport {
 				.days-badge.period {
 					background: linear-gradient(135deg, #10b981, #059669);
 				}
-				.metric-val-with-pct { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-				.metric-val-with-pct span:first-child { font-size: 16px; font-weight: 900; }
-				.metric-pct { font-size: 13px; font-weight: 900; padding: 4px 8px; border-radius: 8px; }
-				.metric-pct.pct-pos { background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(16, 185, 129, 0.15)); color: #047857; border: 2px solid rgba(16, 185, 129, 0.4); }
-				.metric-pct.pct-neg { background: linear-gradient(135deg, rgba(239, 68, 68, 0.3), rgba(239, 68, 68, 0.15)); color: #b91c1c; border: 2px solid rgba(239, 68, 68, 0.4); }
 				.metric-box.returns-box { border-color: #fca5a5 !important; background: linear-gradient(135deg, #fef2f2 0%, #fff 100%) !important; }
 				.metric-box.returns-box .metric-lbl { color: #dc2626 !important; }
-				.metric-box.credit-remain-box { border-color: #fef3c7 !important; background: linear-gradient(135deg, #fffbeb 0%, #fff 100%) !important; }
-				.metric-box.credit-remain-box .metric-lbl { color: #b45309 !important; }
-				.metric-box.credit-remain-box .metric-val { color: #b45309 !important; }
-				.metric-box.credit-remain-box.zero-credit { border-color: #fca5a5 !important; background: linear-gradient(135deg, #fef2f2 0%, #fff 100%) !important; }
-				.metric-box.credit-remain-box.zero-credit .metric-lbl { color: #dc2626 !important; }
-				.metric-box.credit-remain-box.zero-credit .metric-val { color: #dc2626 !important; }
-				.metric-val-with-count { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-				.metric-val-with-count span:first-child { font-size: 16px; font-weight: 900; }
-				.return-count { font-size: 10px; font-weight: 800; color: #64748b; background: rgba(100, 116, 139, 0.15); padding: 3px 8px; border-radius: 8px; }
 				.metric-box.balance-credit-box { background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-color: #0ea5e9; }
 				.metric-val-dual { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; }
 				.metric-val-dual .dual-row { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 8px; padding: 4px 8px; border-radius: 6px; background: rgba(255,255,255,0.5); }
@@ -636,8 +565,10 @@ class CustomerAnalysisReport {
 				.metric-val-dual .dual-row.overdue-row.has-overdue { background: rgba(220, 38, 38, 0.1); }
 				.metric-val-dual .dual-row.overdue-row.has-overdue .dual-lbl { color: #dc2626; }
 				.metric-val-dual .dual-row.overdue-row.has-overdue .overdue-val { color: #dc2626; }
+				.metric-val-with-count { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+				.metric-val-with-count span:first-child { font-size: 16px; font-weight: 900; }
+				.return-count { font-size: 10px; font-weight: 800; color: #64748b; background: rgba(100, 116, 139, 0.15); padding: 3px 8px; border-radius: 8px; }
 
-				/* ===== CUSTOMER INFO BAR ===== */
 				.customer-info-bar {
 					display: flex;
 					flex-wrap: wrap;
@@ -658,32 +589,7 @@ class CustomerAnalysisReport {
 				.info-item.credit-limit { background: rgba(59, 130, 246, 0.15); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.3); }
 				.info-item.credit-limit i { color: #3b82f6; }
 				.info-item.credit-limit .info-value { color: #3b82f6; font-size: 12px; }
-				.info-item.credit-remaining { background: rgba(16, 185, 129, 0.15); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.3); }
-				.info-item.credit-remaining i { color: #10b981; }
-				.info-item.credit-remaining .info-value { color: #10b981; font-size: 12px; }
-				.info-item.credit-remaining.over-limit { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); }
-				.info-item.credit-remaining.over-limit i { color: #ef4444; }
-				.info-item.credit-remaining.over-limit .info-value { color: #ef4444; }
-				.info-profit { display: flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 800; }
-				.info-profit.profit-pos { background: rgba(16, 185, 129, 0.3); color: #10b981; }
-				.info-profit.profit-neg { background: rgba(239, 68, 68, 0.3); color: #ef4444; }
-				.info-profit i { font-size: 10px; }
-				.days-tag {
-					background: linear-gradient(135deg, #6366f1, #8b5cf6);
-					color: #fff;
-					padding: 4px 10px;
-					border-radius: 8px;
-					font-size: 13px;
-					font-weight: 800;
-					margin-right: 6px;
-				}
-				.days-tag.period { background: linear-gradient(135deg, #10b981, #059669); }
-				.days-tag.credit { background: linear-gradient(135deg, #f59e0b, #d97706); }
-				.info-item.data-days { background: rgba(245, 158, 11, 0.15); padding: 8px 14px; border-radius: 10px; border: 1px solid rgba(245, 158, 11, 0.3); }
-				.info-item.data-days i { color: #f59e0b; }
-				.info-item.data-days .info-value { color: #fcd34d; }
 
-				/* ===== ITEMS TABLE ===== */
 				.items-wrapper { border-top: 2px solid #e5e7eb; margin-top: 4px; }
 				.items-toggle {
 					display: flex;
@@ -758,24 +664,16 @@ class CustomerAnalysisReport {
 				.date-cell { font-weight: 900; color: #6366f1; font-size: 12px; white-space: nowrap; }
 				.weight-cell { font-weight: 900; color: #7c3aed; font-size: 18px; }
 				.amount-cell { font-weight: 900; color: #1e293b; font-size: 18px; }
-				.cost-cell { font-weight: 900; color: #dc2626; font-size: 18px; }
 				.stock-cell { display: flex; align-items: center; justify-content: center; gap: 10px; }
 				.stock-dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 3px 8px rgba(0,0,0,0.2); animation: pulse 2s ease-in-out infinite; }
 				.stock-dot.hi { background: linear-gradient(135deg, #10b981, #059669); }
 				.stock-dot.md { background: linear-gradient(135deg, #f59e0b, #d97706); }
 				.stock-dot.lo { background: linear-gradient(135deg, #ef4444, #dc2626); }
 				.stock-val { font-weight: 900; color: #1e293b; font-size: 18px; }
-				.val-pos { color: #059669 !important; font-weight: 900; }
-				.val-neg { color: #dc2626 !important; font-weight: 900; }
 				.branch-user-cell { display: flex; flex-direction: column; gap: 5px; align-items: center; }
 				.branch-name { font-size: 15px; font-weight: 800; color: #7c3aed; background: rgba(124, 58, 237, 0.1); padding: 4px 12px; border-radius: 6px; }
 				.creator-name { font-size: 13px; font-weight: 600; color: #64748b; }
-				.profit-cell { display: flex; flex-direction: column; align-items: center; gap: 5px; }
-				.profit-pct { font-size: 16px; font-weight: 900; padding: 6px 14px; border-radius: 12px; text-shadow: 0 1px 1px rgba(0,0,0,0.1); }
-				.profit-pct.pct-pos { background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(16, 185, 129, 0.15)); color: #047857; border: 2px solid rgba(16, 185, 129, 0.5); }
-				.profit-pct.pct-neg { background: linear-gradient(135deg, rgba(239, 68, 68, 0.3), rgba(239, 68, 68, 0.15)); color: #b91c1c; border: 2px solid rgba(239, 68, 68, 0.5); }
 
-				/* ===== EMPTY & LOADING ===== */
 				.empty-box { text-align: center; padding: 100px 20px; animation: fadeIn 0.5s ease-out; }
 				.empty-box h4 { font-size: 24px; font-weight: 700; color: #6366f1; margin-bottom: 12px; }
 				.empty-box p { color: #9ca3af; font-size: 15px; }
@@ -783,7 +681,6 @@ class CustomerAnalysisReport {
 				.spinner { width: 50px; height: 50px; border: 4px solid #e0e7ff; border-top: 4px solid #6366f1; border-radius: 50%; animation: spin 0.8s linear infinite; }
 				.loading-txt { color: #6b7280; font-size: 15px; font-weight: 600; }
 
-				/* ===== RESPONSIVE ===== */
 				@media (max-width: 1400px) { .summary-metrics { grid-template-columns: repeat(4, 1fr); } }
 				@media (max-width: 1200px) { .metrics-row { grid-template-columns: repeat(3, 1fr); } .customer-info-bar { justify-content: center; } }
 				@media (max-width: 992px) { .summary-metrics { grid-template-columns: repeat(4, 1fr); } }
@@ -792,13 +689,11 @@ class CustomerAnalysisReport {
 					.summary-metrics { grid-template-columns: repeat(2, 1fr); }
 					.summary-title-row { flex-direction: column; gap: 14px; align-items: flex-start; }
 					.customer-card-header { flex-direction: column; gap: 12px; }
-					.customer-stats { flex-wrap: wrap; justify-content: center; }
 					.customer-main-info { flex-direction: column; text-align: center; }
 					.customer-info-bar { flex-direction: column; gap: 14px; align-items: flex-start; }
 				}
 				@media (max-width: 480px) { .metrics-row { grid-template-columns: 1fr 1fr; } .summary-metrics { grid-template-columns: repeat(2, 1fr); } }
 
-				/* ===== PRINT STYLES - CLEAN TABLES ONLY ===== */
 				@media print {
 					* {
 						-webkit-print-color-adjust: exact !important;
@@ -811,18 +706,10 @@ class CustomerAnalysisReport {
 						font-size: 12pt !important;
 						margin: 0 !important;
 						padding: 0 !important;
-						height: auto !important;
-						min-height: auto !important;
-						overflow: visible !important;
 					}
-
-					/* Hide ALL non-essential elements */
 					.floating-actions,
 					.navbar,
 					.page-head,
-					.page-container > .page-head,
-					[data-page-container] > .page-head,
-					.layout-side-section,
 					.customer-card-header,
 					.customer-info-bar,
 					.metrics-row,
@@ -833,36 +720,15 @@ class CustomerAnalysisReport {
 					.items-badge,
 					.stock-dot,
 					.rate-ton,
-					.profit-pct,
 					.qty-uom,
 					.item-name,
 					.creator-name,
 					.days-badge,
 					.days-tag,
 					footer,
-					.footer,
-					#page-customer-analysis-report > .page-head { display: none !important; visibility: hidden !important; height: 0 !important; }
-
-					/* Main container */
-					.main-section, .layout-main-section {
-						margin: 0 !important;
-						padding: 0 !important;
-						width: 100% !important;
-					}
-					.customer-analysis-report {
-						padding: 5mm !important;
-						background: #fff !important;
-						direction: rtl !important;
-						min-height: auto !important;
-					}
-					#report-content {
-						width: 100% !important;
-						overflow: visible !important;
-					}
-
-					/* Print Header */
-					.customer-analysis-report::before {
-						content: 'تقرير تحليل العملاء';
+					.footer { display: none !important; visibility: hidden !important; height: 0 !important; }
+					.customer-sales-report::before {
+						content: 'تقرير مبيعات العملاء';
 						display: block;
 						text-align: center;
 						font-size: 18pt;
@@ -871,117 +737,48 @@ class CustomerAnalysisReport {
 						padding: 8px;
 						border-bottom: 3px solid #000;
 					}
-
-					/* Customer Card */
 					.customer-card {
 						page-break-inside: avoid;
 						margin: 0 0 15px 0 !important;
-						padding: 0 !important;
 						border: none !important;
 						border-radius: 0 !important;
-						background: #fff !important;
-						overflow: visible !important;
 					}
-
-					/* Show items panel and fix overflow */
 					.items-panel { display: block !important; overflow: visible !important; }
 					.items-scroll { max-height: none !important; overflow: visible !important; }
-					.items-wrapper { border: none !important; margin: 0 !important; overflow: visible !important; }
-
-					/* Customer name header */
-					.customer-card::before {
-						content: attr(data-customer-name);
-						display: block;
-						font-size: 14pt;
-						font-weight: bold;
-						padding: 8px 12px;
-						background: #ddd !important;
-						border: 2px solid #333;
-						margin-bottom: 5px;
-					}
-
-					/* Items Table */
-					.items-tbl {
-						width: 100% !important;
-						border-collapse: collapse !important;
-						font-size: 11pt !important;
-						margin-bottom: 15px !important;
-						page-break-inside: auto;
-					}
 					.items-tbl th {
 						background: #333 !important;
 						color: #fff !important;
 						font-weight: bold !important;
 						padding: 8px 6px !important;
 						border: 2px solid #000 !important;
-						font-size: 10pt !important;
-						text-transform: none !important;
-						letter-spacing: 0 !important;
 					}
 					.items-tbl td {
 						padding: 6px 5px !important;
 						border: 1px solid #333 !important;
 						font-size: 11pt !important;
 						color: #000 !important;
-						text-align: center !important;
-						background: #fff !important;
-						font-weight: 600 !important;
 					}
-					.items-tbl tbody tr:nth-child(even) td { background: #f0f0f0 !important; }
-					.items-tbl tbody tr:hover { transform: none !important; }
-					.items-tbl tbody tr { page-break-inside: avoid; }
-
-					/* Simple text */
-					.inv-link {
-						background: none !important;
-						color: #000 !important;
-						padding: 0 !important;
-						border-radius: 0 !important;
-						font-weight: bold !important;
-						text-decoration: none !important;
-						font-size: 10pt !important;
-					}
-					.date-cell { color: #000 !important; font-weight: bold !important; font-size: 10pt !important; }
-					.item-code { color: #000 !important; font-weight: bold !important; font-size: 10pt !important; }
-					.qty-main { color: #000 !important; font-weight: bold !important; font-size: 11pt !important; }
-					.qty-cell, .rate-cell, .stock-cell, .branch-user-cell, .profit-cell { gap: 0 !important; }
-					.rate-invoice, .branch-name {
-						background: none !important;
-						color: #000 !important;
-						padding: 0 !important;
-						border-radius: 0 !important;
-						font-size: 10pt !important;
-					}
-					.weight-cell, .amount-cell, .cost-cell, .stock-val { color: #000 !important; font-size: 11pt !important; font-weight: bold !important; }
-					.val-pos { color: #000 !important; }
-					.val-neg { color: #000 !important; font-weight: bold !important; }
-
-					/* Page settings */
-					@page {
-						size: A4 landscape;
-						margin: 8mm;
-					}
+					@page { size: A4 landscape; margin: 8mm; }
 				}
 			</style>
 			<div class="floating-actions">
 				<button class="float-btn settings-btn" id="settings-btn"><i class="fa fa-cog"></i><span class="btn-tooltip">إعدادات التقرير</span></button>
 				<button class="float-btn reload-btn" id="reload-btn"><i class="fa fa-refresh"></i><span class="btn-tooltip">تحديث التقرير</span></button>
-				<button class="float-btn print-btn" id="print-btn"><i class="fa fa-print"></i><span class="btn-tooltip">طباعة PDF</span></button>
+				<button class="float-btn print-btn" id="print-btn"><i class="fa fa-print"></i><span class="btn-tooltip">طباعة</span></button>
 			</div>
-			<div class="customer-analysis-report">
+			<div class="customer-sales-report">
 				<div id="report-content">
 					<div class="empty-box">
-						<h4>تقرير تحليل العملاء</h4>
+						<h4>تقرير مبيعات العملاء</h4>
 						<p>اضغط على زر الإعدادات لتحديد معايير البحث</p>
 					</div>
 				</div>
 			</div>
 		`);
 
-		// Bind button events
 		$('#settings-btn').off('click').on('click', () => this.show_settings_dialog());
 		$('#reload-btn').off('click').on('click', () => this.generate_report());
-		$('#print-btn').off('click').on('click', () => this.generate_pdf_and_print());
+		$('#print-btn').off('click').on('click', () => window.print());
 	}
 
 	generate_report() {
@@ -1000,7 +797,7 @@ class CustomerAnalysisReport {
 		$('#report-content').html(`<div class="loading-box"><div class="spinner"></div><div class="loading-txt">جاري تحميل البيانات...</div></div>`);
 
 		frappe.call({
-			method: 'expenses_management.expenses_management.page.customer_analysis_report.customer_analysis_report.get_report_data',
+			method: 'expenses_management.expenses_management.page.customer_sales_report.customer_sales_report.get_report_data',
 			args: filters,
 			callback: (r) => {
 				if (r.message && r.message.customers && r.message.customers.length > 0) {
@@ -1017,7 +814,6 @@ class CustomerAnalysisReport {
 	}
 
 	render_report(data) {
-		// Calculate period days for use in customer cards
 		const filters = data.filters || {};
 		const periodFromDate = new Date(filters.from_date);
 		const periodToDate = new Date(filters.to_date);
@@ -1054,12 +850,11 @@ class CustomerAnalysisReport {
 		if (filters.customer_group) filterTags += `<div class="filter-tag"><i class="fa fa-users"></i><span class="filter-label">مجموعة العملاء:</span><span class="filter-value">${filters.customer_group}</span></div>`;
 		if (filters.territory) filterTags += `<div class="filter-tag"><i class="fa fa-map-marker"></i><span class="filter-label">المنطقة:</span><span class="filter-value">${filters.territory}</span></div>`;
 		if (filters.sales_person) filterTags += `<div class="filter-tag"><i class="fa fa-id-badge"></i><span class="filter-label">المندوب:</span><span class="filter-value">${filters.sales_person}</span></div>`;
-		if (filters.pos_profile) filterTags += `<div class="filter-tag"><i class="fa fa-desktop"></i><span class="filter-label">نقطة البيع:</span><span class="filter-value">${filters.pos_profile}</span></div>`;
 
 		return `
 			<div class="summary-header">
 				<div class="summary-title-row">
-					<div class="summary-title"><i class="fa fa-bar-chart"></i>تقرير تحليل العملاء</div>
+					<div class="summary-title"><i class="fa fa-bar-chart"></i>تقرير مبيعات العملاء</div>
 					<div class="summary-filters">${filterTags}</div>
 				</div>
 				<div class="summary-metrics">
@@ -1070,7 +865,6 @@ class CustomerAnalysisReport {
 					<div class="summary-metric-box"><div class="summary-metric-lbl">المبيعات</div><div class="summary-metric-val">${this.fmt(totals.total_purchase_period)}</div></div>
 					<div class="summary-metric-box"><div class="summary-metric-lbl">الرصيد</div><div class="summary-metric-val">${this.fmt(totals.total_balance)}</div></div>
 					<div class="summary-metric-box"><div class="summary-metric-lbl">المستحق</div><div class="summary-metric-val ${(totals.total_due || 0) > 0 ? 'neg' : ''}">${this.fmt(totals.total_due)}</div></div>
-					<div class="summary-metric-box"><div class="summary-metric-lbl">الأرباح</div><div class="summary-metric-val ${(totals.revenue_period || 0) >= 0 ? 'pos' : 'neg'}">${this.fmt(totals.revenue_period)}${totals.total_purchase_period > 0 ? ` <span class="metric-pct ${(totals.revenue_period || 0) >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num((totals.revenue_period / totals.total_purchase_period) * 100, 1)}%</span>` : ''}</div></div>
 				</div>
 			</div>
 		`;
@@ -1121,19 +915,13 @@ class CustomerAnalysisReport {
 						<i class="fa fa-money"></i>
 						<span class="info-label">مبلغ آخر فاتورة:</span>
 						<span class="info-value">${this.fmt(c.last_invoice_amount)}</span>
-						<span class="info-profit ${(c.last_invoice_profit || 0) >= 0 ? 'profit-pos' : 'profit-neg'}">
-							<i class="fa ${(c.last_invoice_profit || 0) >= 0 ? 'fa-arrow-up' : 'fa-arrow-down'}"></i>
-							${this.fmt(Math.abs(c.last_invoice_profit))}
-						</span>
 					</div>
 					<div class="info-item credit-limit"><i class="fa fa-credit-card"></i><span class="info-label">حد الائتمان:</span><span class="info-value">${this.fmt(c.credit_limit)}</span></div>
 					${c.credit_days && c.credit_days > 0 ? `<div class="info-item credit-days-info"><i class="fa fa-clock-o"></i><span class="info-label">أيام الائتمان:</span><span class="info-value">${c.credit_days} يوم</span></div>` : ''}
 				</div>
 				<div class="metrics-row">
 					<div class="metric-box"><div class="metric-lbl">إجمالي المبيعات <span class="days-badge">${dataDays > 0 ? dataDays + ' يوم' : '60 يوم'}</span></div><div class="metric-val">${this.fmt(c.total_purchase_all_time)}</div></div>
-					<div class="metric-box"><div class="metric-lbl">أرباح الفترة <span class="days-badge">${dataDays > 0 ? dataDays + ' يوم' : '60 يوم'}</span></div><div class="metric-val ${(c.revenue_all_time || 0) >= 0 ? 'pos' : 'neg'}">${this.fmt(c.revenue_all_time)}${c.total_purchase_all_time > 0 ? ` <span class="metric-pct ${(c.revenue_all_time || 0) >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num((c.revenue_all_time / c.total_purchase_all_time) * 100, 1)}%</span>` : ''}</div></div>
 					<div class="metric-box"><div class="metric-lbl">مبيعات الفترة <span class="days-badge period">${this.periodDays} يوم</span></div><div class="metric-val">${this.fmt(c.total_purchase_period)}</div></div>
-					<div class="metric-box"><div class="metric-lbl">أرباح الفترة <span class="days-badge period">${this.periodDays} يوم</span></div><div class="metric-val ${(c.revenue_period || 0) >= 0 ? 'pos' : 'neg'}">${this.fmt(c.revenue_period)}${c.total_purchase_period > 0 ? ` <span class="metric-pct ${(c.revenue_period || 0) >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num((c.revenue_period / c.total_purchase_period) * 100, 1)}%</span>` : ''}</div></div>
 					<div class="metric-box balance-credit-box"><div class="metric-val-dual"><div class="dual-row"><span class="dual-lbl">الرصيد</span><span class="balance-val">${this.fmt(c.total_balance)}</span></div><div class="dual-row overdue-row ${(c.total_due || 0) > 0 ? 'has-overdue' : ''}"><span class="dual-lbl">المستحق</span><span class="overdue-val">${this.fmt(c.total_due)}</span></div><div class="dual-row credit-row ${Math.max(0, (c.credit_limit || 0) - (c.total_due || 0)) <= 0 ? 'zero-credit' : ''}"><span class="dual-lbl">المتبقي من الائتمان</span><span class="credit-remain-val">${this.fmt(Math.max(0, (c.credit_limit || 0) - (c.total_due || 0)))}</span></div></div></div>
 					<div class="metric-box returns-box"><div class="metric-lbl">المرتجعات <span class="days-badge">${dataDays > 0 ? dataDays + ' يوم' : '60 يوم'}</span></div><div class="metric-val-with-count"><span class="neg">${this.fmt(c.total_returns_all_time)}</span><span class="return-count">${c.return_count_all_time || 0} فاتورة</span></div></div>
 				</div>
@@ -1159,10 +947,7 @@ class CustomerAnalysisReport {
 
 		let rows = items.map(i => {
 			const stk = (i.current_stock || 0) > 100 ? 'hi' : ((i.current_stock || 0) > 20 ? 'md' : 'lo');
-			const revCls = (i.revenue || 0) >= 0 ? 'val-pos' : 'val-neg';
 			const invoiceRate = i.total_amount && i.qty ? (i.total_amount / i.qty) : 0;
-			const profitPct = i.total_amount && i.total_amount > 0 ? ((i.revenue || 0) / i.total_amount * 100) : 0;
-			const profitPctCls = profitPct >= 0 ? 'pct-pos' : 'pct-neg';
 
 			return `
 				<tr>
@@ -1173,8 +958,6 @@ class CustomerAnalysisReport {
 					<td class="weight-cell">${this.num(i.weight_in_tons, 3)} طن</td>
 					<td><div class="rate-cell"><span class="rate-invoice">${this.fmt(invoiceRate)}/${i.invoice_uom || ''}</span><span class="rate-ton">${this.fmt(i.rate_per_ton)}/طن</span></div></td>
 					<td class="amount-cell">${this.fmt(i.total_amount)}</td>
-					<td class="cost-cell">${this.fmt(i.cost_of_goods)}</td>
-					<td><div class="profit-cell"><span class="${revCls}">${this.fmt(i.revenue)}</span><span class="profit-pct ${profitPctCls}">${this.num(profitPct, 1)}%</span></div></td>
 					<td><div class="stock-cell"><span class="stock-dot ${stk}"></span><span class="stock-val">${this.num(i.current_stock, 0)}</span></div></td>
 					<td><div class="branch-user-cell"><span class="branch-name">${i.invoice_branch || '-'}</span><span class="creator-name">${i.invoice_creator || '-'}</span></div></td>
 				</tr>
@@ -1184,174 +967,11 @@ class CustomerAnalysisReport {
 		return `
 			<div class="items-scroll">
 				<table class="items-tbl">
-					<thead><tr><th>الفاتورة</th><th>التاريخ</th><th>الصنف</th><th>الكمية</th><th>الوزن</th><th>السعر</th><th>المبلغ</th><th>التكلفة</th><th>الربح</th><th>المخزون</th><th>الفرع / المستخدم</th></tr></thead>
+					<thead><tr><th>الفاتورة</th><th>التاريخ</th><th>الصنف</th><th>الكمية</th><th>الوزن</th><th>السعر</th><th>المبلغ</th><th>المخزون</th><th>الفرع / المستخدم</th></tr></thead>
 					<tbody>${rows}</tbody>
 				</table>
 			</div>
 		`;
-	}
-
-	generate_pdf_and_print() {
-		if (!this.data || !this.data.customers || this.data.customers.length === 0) {
-			frappe.msgprint({ title: __('تنبيه'), indicator: 'orange', message: __('لا توجد بيانات لطباعتها') });
-			return;
-		}
-
-		// Generate clean HTML for PDF
-		const filters = this.data.filters || {};
-		const periodFromDate = new Date(filters.from_date);
-		const periodToDate = new Date(filters.to_date);
-		const periodDays = Math.ceil((periodToDate - periodFromDate) / (1000 * 60 * 60 * 24)) + 1;
-
-		// Calculate totals from customers data
-		const totals = {
-			total_customers: this.data.customers.length,
-			invoice_count_period: 0,
-			total_weight_tons: 0,
-			unique_items_count: 0,
-			total_purchase_all_time: 0,
-			total_purchase_period: 0,
-			total_balance: 0,
-			total_due: 0,
-			revenue_all_time: 0,
-			revenue_period: 0
-		};
-
-		this.data.customers.forEach(c => {
-			totals.invoice_count_period += c.invoice_count_period || 0;
-			totals.total_weight_tons += c.total_weight_tons || 0;
-			totals.unique_items_count += c.unique_items_count || 0;
-			totals.total_purchase_all_time += c.total_purchase_all_time || 0;
-			totals.total_purchase_period += c.total_purchase_period || 0;
-			totals.total_balance += c.total_balance || 0;
-			totals.total_due += c.total_due || 0;
-			totals.revenue_all_time += c.revenue_all_time || 0;
-			totals.revenue_period += c.revenue_period || 0;
-		});
-
-		let html = `
-			<!DOCTYPE html>
-			<html dir="rtl" lang="ar">
-			<head>
-				<meta charset="UTF-8">
-				<title>تقرير تحليل العملاء</title>
-				<style>
-					* { margin: 0; padding: 0; box-sizing: border-box; }
-					body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; font-size: 16px; direction: rtl; padding: 15px; background: #fff; color: #000; }
-					h1 { text-align: center; font-size: 24px; font-weight: 900; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 3px solid #000; }
-					.filters-row { text-align: center; margin-bottom: 12px; font-size: 14px; font-weight: 800; }
-					.filters-row span { margin: 0 10px; }
-					.summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px; }
-					.summary-box { border: 2px solid #000; padding: 8px 6px; text-align: center; background: #f5f5f5; }
-					.summary-box .s-lbl { font-size: 11px; font-weight: 800; color: #444; display: block; margin-bottom: 4px; }
-					.summary-box .s-val { font-size: 15px; font-weight: 900; color: #000; }
-					.customer-section { margin-bottom: 14px; page-break-inside: avoid; border: 2px solid #000; }
-					.customer-header { width: 100%; border-collapse: collapse; background: #e5e5e5; }
-					.customer-header td { padding: 6px 8px; font-weight: 900; border: 1px solid #999; text-align: center; }
-					.customer-header .cust-name { font-size: 14px; text-align: right; background: #d0d0d0; }
-					.customer-header .cust-stat .lbl { color: #555; font-size: 10px; display: block; }
-					.customer-header .cust-stat .val { color: #000; font-weight: 900; font-size: 13px; }
-					.customer-header .cust-stat.highlight { background: #fff3cd; }
-					.customer-header .cust-stat.danger { background: #f8d7da; }
-					.customer-header .cust-stat.success { background: #d4edda; }
-					.items-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-					.items-table th { background: #ddd; padding: 6px 4px; text-align: center; font-weight: 900; font-size: 12px; border: 2px solid #000; }
-					.items-table td { border: 1px solid #888; padding: 5px 4px; text-align: center; font-weight: 700; }
-					.items-table tbody tr:nth-child(even) { background: #f0f0f0; }
-					.items-table .idx { background: #e5e5e5; font-weight: 900; width: 30px; font-size: 13px; }
-					.neg { font-weight: 900; color: #c00; }
-					.pct-badge { display: inline-block; font-size: 12px; font-weight: 900; padding: 3px 8px; border-radius: 6px; margin-right: 4px; }
-					.pct-badge.pct-pos { background: #d4edda; color: #155724; }
-					.pct-badge.pct-neg { background: #f8d7da; color: #721c24; }
-					@media print {
-						body { padding: 6mm; font-size: 14px; }
-						.customer-section { page-break-inside: avoid; }
-						.items-table { font-size: 12px; }
-						.items-table th { font-size: 11px; }
-						@page { size: A4 landscape; margin: 8mm; }
-					}
-				</style>
-			</head>
-			<body>
-				<h1>تقرير تحليل العملاء</h1>
-				<div class="filters-row">
-					<span>الفترة: <strong>${filters.from_date || ''} - ${filters.to_date || ''} (${periodDays} يوم)</strong></span>
-					${filters.company ? `<span>الشركة: <strong>${filters.company}</strong></span>` : ''}
-					${filters.branch ? `<span>الفرع: <strong>${filters.branch}</strong></span>` : ''}
-					${filters.customer ? `<span>العميل: <strong>${filters.customer}</strong></span>` : ''}
-				</div>
-				<div class="summary-grid">
-					<div class="summary-box"><span class="s-lbl">عملاء</span><span class="s-val">${totals.total_customers || 0}</span></div>
-					<div class="summary-box"><span class="s-lbl">الوزن (طن)</span><span class="s-val">${this.num(totals.total_weight_tons, 2)}</span></div>
-					<div class="summary-box"><span class="s-lbl">مبيعات الفترة (${periodDays} يوم)</span><span class="s-val">${this.fmt(totals.total_purchase_period)}</span></div>
-					<div class="summary-box"><span class="s-lbl">أرباح الفترة (${periodDays} يوم)</span><span class="s-val">${this.fmt(totals.revenue_period)}</span></div>
-				</div>
-		`;
-
-		// Add each customer
-		this.data.customers.forEach((c, custIdx) => {
-			const creditLimit = c.credit_limit || 0;
-			const lastInvDate = c.last_invoice_date || '-';
-
-			html += `
-				<div class="customer-section">
-					<table class="customer-header">
-						<tr>
-							<td class="cust-name" colspan="2">${custIdx + 1}. ${c.customer || ''} - ${c.customer_name || ''}</td>
-							<td class="cust-stat highlight"><span class="lbl">حد الائتمان</span><span class="val">${this.fmt(creditLimit)}</span></td>
-							<td class="cust-stat"><span class="lbl">آخر فاتورة</span><span class="val">${lastInvDate}</span></td>
-							<td class="cust-stat"><span class="lbl">مبيعات الفترة</span><span class="val">${this.fmt(c.total_purchase_period)}</span></td>
-							<td class="cust-stat"><span class="lbl">ربح الفترة</span><span class="val">${this.fmt(c.revenue_period)}</span></td>
-							<td class="cust-stat"><span class="lbl">الوزن (طن)</span><span class="val">${this.num(c.total_weight_tons, 2)}</span></td>
-						</tr>
-					</table>
-					<table class="items-table">
-						<thead><tr><th>#</th><th>الفاتورة / الصنف</th><th>الكمية</th><th>الوزن</th><th>السعر</th><th>المبلغ</th><th>التكلفة</th><th>الربح</th><th>الفرع</th></tr></thead>
-						<tbody>
-			`;
-
-			if (c.items && c.items.length > 0) {
-				c.items.forEach((i, idx) => {
-					const invoiceRate = i.qty && i.qty !== 0 ? (i.total_amount / i.qty) : 0;
-					const profitPct = i.total_amount && i.total_amount !== 0 ? ((i.revenue / i.total_amount) * 100) : 0;
-					html += `
-						<tr style="font-size:10px;">
-							<td class="idx">${idx + 1}</td>
-							<td style="text-align: right;"><div>${i.item_code || ''} - ${i.item_name || ''}</div><div style="font-size:9px; color:#555;">${i.invoice_id || ''}</div></td>
-							<td>${this.num(i.qty, 2)} ${i.invoice_uom || ''}</td>
-							<td>${this.num(i.weight_in_tons, 3)}</td>
-							<td><div>${this.fmt(i.rate_per_ton)}/طن</div><div style="font-size:9px; color:#555;">${this.fmt(invoiceRate)}/${i.invoice_uom || ''}</div></td>
-							<td>${this.fmt(i.total_amount)}</td>
-							<td>${this.fmt(i.cost_of_goods)}</td>
-							<td><span style="font-weight:900;">${this.fmt(i.revenue)}</span> <span class="pct-badge ${profitPct >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num(profitPct, 1)}%</span></td>
-							<td>${i.invoice_branch || '-'}</td>
-						</tr>
-					`;
-				});
-			}
-
-			html += `
-						</tbody>
-					</table>
-				</div>
-			`;
-		});
-
-		html += `
-			</body>
-			</html>
-		`;
-
-		// Open in new window and print
-		const printWindow = window.open('', '_blank', 'width=1200,height=800');
-		printWindow.document.write(html);
-		printWindow.document.close();
-
-		printWindow.onload = function() {
-			setTimeout(() => {
-				printWindow.print();
-			}, 300);
-		};
 	}
 
 	fmt(v) {

@@ -15,6 +15,17 @@ def is_admin_or_system_manager():
     return "System Manager" in user_roles
 
 
+def has_permission_to_view():
+    """Check if user has permission to view this report"""
+    allowed_roles = ["System Manager", "Accounts Manager", "Accounts User", "Sales Manager", "Sales User"]
+    user_roles = frappe.get_roles()
+
+    for role in allowed_roles:
+        if role in user_roles:
+            return True
+    return False
+
+
 def get_user_restrictions():
     """Get user permission restrictions for filtering data"""
     if is_admin_or_system_manager():
@@ -49,6 +60,9 @@ def get_user_restrictions():
 @frappe.whitelist()
 def get_filter_options():
     """Get options for report filters using SQL"""
+
+    if not has_permission_to_view():
+        frappe.throw(_("You don't have permission to view this report"))
 
     restrictions = get_user_restrictions()
 
@@ -123,7 +137,10 @@ def get_filter_options():
 @frappe.whitelist()
 def get_report_data(company, from_date=None, to_date=None, branch=None, customer=None, pos_profile=None,
                     customer_group=None, territory=None, sales_person=None, payment_status=None, sort_by=None, sort_order=None, use_credit_days=None):
-    """Get customer analysis report data using SQL"""
+    """Get customer sales report data using SQL - WITHOUT profit information"""
+
+    if not has_permission_to_view():
+        frappe.throw(_("You don't have permission to view this report"))
 
     if not company:
         frappe.throw(_("Company is required"))
@@ -198,7 +215,7 @@ def get_report_data(company, from_date=None, to_date=None, branch=None, customer
     customer_join = "LEFT JOIN `tabCustomer` c ON c.name = si.customer"
     customer_where = (" AND " + " AND ".join(customer_conditions)) if customer_conditions else ""
 
-    customers_data = get_customers_analysis(company, from_date, to_date, values, extra_where, customer_join, customer_where, use_credit_days)
+    customers_data = get_customers_sales_data(company, from_date, to_date, values, extra_where, customer_join, customer_where, use_credit_days)
     period_totals = calculate_period_totals(values, extra_where, customer_join, customer_where)
 
     return {
@@ -227,8 +244,6 @@ def get_empty_totals():
         "total_purchase_all_time": 0,
         "total_balance": 0,
         "total_due": 0,
-        "revenue_period": 0,
-        "revenue_all_time": 0,
         "invoice_count_period": 0,
         "invoice_count_all_time": 0,
         "return_count_period": 0,
@@ -240,7 +255,7 @@ def get_empty_totals():
 
 
 def calculate_period_totals(values, extra_where, customer_join, customer_where):
-    """Calculate totals using SQL"""
+    """Calculate totals using SQL - WITHOUT profit"""
 
     combined_totals = frappe.db.sql(f"""
         SELECT
@@ -281,7 +296,7 @@ def calculate_period_totals(values, extra_where, customer_join, customer_where):
         )
     """, values, as_dict=1)
 
-    # Get weight and items count (without DN join to avoid duplicates)
+    # Get weight and items count (no profit)
     items_totals = frappe.db.sql(f"""
         SELECT
             COUNT(*) as total_items_count,
@@ -298,30 +313,9 @@ def calculate_period_totals(values, extra_where, customer_join, customer_where):
         {extra_where}
     """, values, as_dict=1)
 
-    # Get revenue (with DN join for cost calculation)
-    revenue_totals = frappe.db.sql(f"""
-        SELECT
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.base_net_amount ELSE -sii.base_net_amount END), 0) as net_sales,
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * COALESCE(dni.incoming_rate, 0) ELSE -sii.stock_qty * COALESCE(dni.incoming_rate, 0) END), 0) as cost_of_goods
-        FROM `tabSales Invoice Item` sii
-        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-        LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
-        {customer_join}
-        WHERE si.docstatus = 1
-        AND si.company = %(company)s
-        AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
-        {customer_where}
-        {extra_where}
-    """, values, as_dict=1)
-
     inv_data = combined_totals[0] if combined_totals else {}
     balance_data = all_time_balance_query[0] if all_time_balance_query else {}
     items_data = items_totals[0] if items_totals else {}
-    rev_data = revenue_totals[0] if revenue_totals else {}
-
-    net_sales = flt(rev_data.get("net_sales", 0))
-    cost_of_goods = flt(rev_data.get("cost_of_goods", 0))
-    revenue_period = net_sales - cost_of_goods
 
     return {
         "total_customers": cint(inv_data.get("total_customers", 0)),
@@ -329,8 +323,6 @@ def calculate_period_totals(values, extra_where, customer_join, customer_where):
         "total_purchase_all_time": round(flt(inv_data.get("period_sales", 0)) - flt(inv_data.get("period_returns", 0)), 2),
         "total_balance": round(flt(balance_data.get("total_balance", 0)), 2),
         "total_due": round(flt(balance_data.get("total_due", 0)), 2),
-        "revenue_period": round(revenue_period, 2),
-        "revenue_all_time": round(revenue_period, 2),
         "invoice_count_period": cint(inv_data.get("invoice_count_period", 0)),
         "invoice_count_all_time": cint(inv_data.get("invoice_count_period", 0)),
         "return_count_period": cint(inv_data.get("return_count_period", 0)),
@@ -341,8 +333,8 @@ def calculate_period_totals(values, extra_where, customer_join, customer_where):
     }
 
 
-def get_customers_analysis(company, from_date, to_date, values, extra_where, customer_join, customer_where, use_credit_days=False):
-    """Get detailed analysis for all customers using SQL"""
+def get_customers_sales_data(company, from_date, to_date, values, extra_where, customer_join, customer_where, use_credit_days=False):
+    """Get customer sales data using SQL - WITHOUT profit information"""
 
     # Get all customers with period totals
     period_data = frappe.db.sql(f"""
@@ -426,45 +418,6 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
 
     all_time_map = {d.customer: d for d in all_time_data}
 
-    # All-time revenue
-    all_time_revenue = frappe.db.sql("""
-        SELECT
-            si.customer,
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.base_net_amount ELSE -sii.base_net_amount END), 0) as net_sales,
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * COALESCE(dni.incoming_rate, 0) ELSE -sii.stock_qty * COALESCE(dni.incoming_rate, 0) END), 0) as cost_of_goods,
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.qty ELSE 0 END), 0) as total_qty
-        FROM `tabSales Invoice Item` sii
-        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-        LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
-        WHERE si.docstatus = 1
-        AND si.company = %(company)s
-        AND si.customer IN %(customers)s
-        GROUP BY si.customer
-    """, {"company": company, "customers": customer_list}, as_dict=1)
-
-    all_time_revenue_map = {d.customer: d for d in all_time_revenue}
-
-    # Period revenue
-    period_revenue = frappe.db.sql(f"""
-        SELECT
-            si.customer,
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.base_net_amount ELSE -sii.base_net_amount END), 0) as net_sales,
-            COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.stock_qty * COALESCE(dni.incoming_rate, 0) ELSE -sii.stock_qty * COALESCE(dni.incoming_rate, 0) END), 0) as cost_of_goods
-        FROM `tabSales Invoice Item` sii
-        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-        LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
-        {customer_join}
-        WHERE si.docstatus = 1
-        AND si.company = %(company)s
-        AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
-        AND si.customer IN %(customers)s
-        {customer_where}
-        {extra_where}
-        GROUP BY si.customer
-    """, {**values, "customers": customer_list}, as_dict=1)
-
-    period_revenue_map = {d.customer: d for d in period_revenue}
-
     # Top item groups
     top_item_groups = frappe.db.sql(f"""
         SELECT
@@ -512,45 +465,34 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
 
     invoice_dates_map = {d.customer: d for d in invoice_dates}
 
-    # Last invoice before period
+    # Last invoice before period (no profit)
     last_invoice_details = frappe.db.sql("""
         SELECT
-            t.customer,
-            t.last_invoice_id,
-            t.last_invoice_date,
-            t.last_invoice_amount,
-            COALESCE(SUM(sii.base_net_amount - (sii.stock_qty * COALESCE(dni.incoming_rate, 0))), 0) as last_invoice_profit
-        FROM (
-            SELECT
-                si.customer,
-                si.name as last_invoice_id,
-                si.posting_date as last_invoice_date,
-                si.base_grand_total as last_invoice_amount
-            FROM `tabSales Invoice` si
-            WHERE si.docstatus = 1
-            AND si.company = %(company)s
-            AND si.customer IN %(customers)s
-            AND si.is_return = 0
-            AND si.posting_date < %(from_date)s
-            AND si.posting_date = (
-                SELECT MAX(si2.posting_date)
-                FROM `tabSales Invoice` si2
-                WHERE si2.customer = si.customer
-                AND si2.docstatus = 1
-                AND si2.company = %(company)s
-                AND si2.is_return = 0
-                AND si2.posting_date < %(from_date)s
-            )
-            GROUP BY si.customer
-        ) t
-        LEFT JOIN `tabSales Invoice Item` sii ON sii.parent = t.last_invoice_id
-        LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
-        GROUP BY t.customer, t.last_invoice_id, t.last_invoice_date, t.last_invoice_amount
+            si.customer,
+            si.name as last_invoice_id,
+            si.posting_date as last_invoice_date,
+            si.base_grand_total as last_invoice_amount
+        FROM `tabSales Invoice` si
+        WHERE si.docstatus = 1
+        AND si.company = %(company)s
+        AND si.customer IN %(customers)s
+        AND si.is_return = 0
+        AND si.posting_date < %(from_date)s
+        AND si.posting_date = (
+            SELECT MAX(si2.posting_date)
+            FROM `tabSales Invoice` si2
+            WHERE si2.customer = si.customer
+            AND si2.docstatus = 1
+            AND si2.company = %(company)s
+            AND si2.is_return = 0
+            AND si2.posting_date < %(from_date)s
+        )
+        GROUP BY si.customer
     """, {"company": company, "customers": customer_list, "from_date": from_date}, as_dict=1)
 
     last_invoice_map = {d.customer: d for d in last_invoice_details}
 
-    # Get items data
+    # Get items data (no profit)
     items_data = get_all_customer_items_batch(values, extra_where, customer_join, customer_where, customer_list)
 
     # Build result
@@ -561,12 +503,6 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
         at = all_time_map.get(cust, {})
         all_time_sales = flt(at.get("all_time_sales", 0))
         all_time_returns = flt(at.get("all_time_returns", 0))
-
-        atr = all_time_revenue_map.get(cust, {})
-        pr = period_revenue_map.get(cust, {})
-
-        all_time_revenue_value = flt(atr.get("net_sales", 0)) - flt(atr.get("cost_of_goods", 0))
-        period_revenue_value = flt(pr.get("net_sales", 0)) - flt(pr.get("cost_of_goods", 0))
 
         top_groups = top_group_map.get(cust, [])
         top_group = top_groups[0] if len(top_groups) > 0 else {}
@@ -594,22 +530,13 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
             "credit_limit": credit_limit,
             "credit_remaining": credit_remaining,
             "credit_days": credit_days,
-            "credit_days_purchases": 0,
-            "credit_days_profit": 0,
-            "credit_days_invoice_count": 0,
-            "credit_days_return_count": 0,
-            "credit_days_returns_amount": 0,
-            "credit_days_total_qty": 0,
             "total_purchase_all_time": all_time_sales - all_time_returns,
             "total_purchase_period": flt(pd.period_sales) - flt(pd.period_returns),
             "total_balance": total_balance,
             "total_due": flt(at.get("total_due", 0)),
-            "revenue_all_time": all_time_revenue_value,
-            "revenue_period": period_revenue_value,
             "invoice_count_all_time": cint(at.get("all_time_invoice_count", 0)),
             "return_count_all_time": cint(at.get("all_time_return_count", 0)),
             "total_returns_all_time": all_time_returns,
-            "total_qty_all_time": flt(atr.get("total_qty", 0)),
             "invoice_count_period": cint(pd.period_invoice_count),
             "return_count_period": cint(pd.period_return_count),
             "total_returns_period": flt(pd.period_returns),
@@ -621,7 +548,6 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
             "last_invoice_date": str(last_inv.get("last_invoice_date", "")) if last_inv.get("last_invoice_date") else "",
             "last_invoice_id": last_inv.get("last_invoice_id", ""),
             "last_invoice_amount": flt(last_inv.get("last_invoice_amount", 0)),
-            "last_invoice_profit": flt(last_inv.get("last_invoice_profit", 0)),
             "total_weight_tons": flt(total_weight_tons, 3),
             "total_items_count": total_items_count,
             "unique_items_count": unique_items_count,
@@ -635,7 +561,7 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
 
 
 def get_all_customer_items_batch(values, extra_where, customer_join, customer_where, customer_list):
-    """Get items sold to all customers using SQL"""
+    """Get items sold to all customers using SQL - WITHOUT profit"""
 
     items = frappe.db.sql(f"""
         SELECT
@@ -652,12 +578,10 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
             sii.stock_qty,
             sii.base_net_amount as total_amount,
             COALESCE(sii.base_net_amount * (si.base_total_taxes_and_charges / NULLIF(si.base_net_total, 0)), 0) as tax_amount,
-            sii.stock_qty * COALESCE(dni.incoming_rate, 0) as cost_of_goods,
             COALESCE(item.weight_per_unit, 1) as weight_per_unit
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
         LEFT JOIN `tabItem` item ON item.name = sii.item_code
-        LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
         {customer_join}
         WHERE si.docstatus = 1
         AND si.company = %(company)s
@@ -701,7 +625,6 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
     customer_items = defaultdict(list)
     for item in items:
         cust = item.customer
-        revenue = flt(item.total_amount) - flt(item.cost_of_goods)
 
         weight_per_unit_kg = flt(item.weight_per_unit) or 1
         total_weight_kg = flt(item.stock_qty) * weight_per_unit_kg
@@ -730,9 +653,7 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
             "total_amount": flt(item.total_amount, 2),
             "tax_amount": tax_amount,
             "total_after_tax": total_after_tax,
-            "cost_of_goods": flt(item.cost_of_goods, 2),
             "rate_per_ton": flt(rate_per_ton, 2),
-            "revenue": flt(revenue, 2),
             "current_stock": flt(stock_map.get(item.item_code, 0), 3)
         })
 

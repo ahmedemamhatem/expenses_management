@@ -1,0 +1,35 @@
+{
+ "content": null,
+ "creation": "2025-01-07 15:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2025-01-07 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Expenses Management",
+ "name": "customer-sales-report",
+ "owner": "Administrator",
+ "page_name": "customer-sales-report",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Accounts Manager"
+  },
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "Sales User"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Customer Sales Report"
+}
