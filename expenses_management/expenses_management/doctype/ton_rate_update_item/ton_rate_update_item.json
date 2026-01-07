@@ -1,0 +1,147 @@
+{
+ "actions": [],
+ "creation": "2025-01-07 12:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_code",
+  "item_name",
+  "stock_uom",
+  "column_break_1",
+  "weight_per_unit",
+  "weight_uom",
+  "section_break_rates",
+  "old_rate",
+  "column_break_2",
+  "new_rate",
+  "rate_difference",
+  "section_break_info",
+  "item_price_name",
+  "column_break_3",
+  "updated"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fetch_from": "item_code.item_name",
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fetch_from": "item_code.stock_uom",
+   "fieldname": "stock_uom",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Default UOM",
+   "options": "UOM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "columns": 1,
+   "fetch_from": "item_code.weight_per_unit",
+   "fieldname": "weight_per_unit",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Weight Per Unit",
+   "precision": "6",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "item_code.weight_uom",
+   "fieldname": "weight_uom",
+   "fieldtype": "Link",
+   "label": "Weight UOM",
+   "options": "UOM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_rates",
+   "fieldtype": "Section Break",
+   "label": "Rates"
+  },
+  {
+   "fieldname": "old_rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Old Rate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "new_rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "New Rate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "rate_difference",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
+   "label": "Rate Difference",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_info",
+   "fieldtype": "Section Break",
+   "label": "Info"
+  },
+  {
+   "description": "Existing Item Price record name (if any)",
+   "fieldname": "item_price_name",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Item Price Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Flag to track if this item was updated",
+   "fieldname": "updated",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Updated",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-01-07 20:58:37.339791",
+ "modified_by": "Administrator",
+ "module": "Expenses Management",
+ "name": "Ton Rate Update Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

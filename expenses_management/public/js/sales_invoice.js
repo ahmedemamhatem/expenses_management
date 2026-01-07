@@ -163,5 +163,73 @@ frappe.ui.form.on("Sales Invoice Item", {
                 }
             });
         }
+
+        // Clear ton_rate when item changes
+        if (row.item_code) {
+            frappe.model.set_value(cdt, cdn, "custom_ton_rate", 0);
+        }
+    },
+
+    // When ton_rate is set, calculate the item rate based on weight
+    custom_ton_rate: function(frm, cdt, cdn) {
+        if (frm.doc.docstatus !== 0) return;
+
+        let row = locals[cdt][cdn];
+        if (!row.item_code || !row.custom_ton_rate) return;
+
+        // Prevent recursive updates
+        if (row._updating_from_rate) {
+            row._updating_from_rate = false;
+            return;
+        }
+
+        frappe.call({
+            method: "expenses_management.expenses_management.sales_invoice.sales_invoice.get_item_weight",
+            args: {
+                item_code: row.item_code
+            },
+            callback: function(r) {
+                if (r.message && r.message.weight_per_unit > 0) {
+                    let weight_kg = r.message.weight_in_kg;
+                    // Formula: rate = (ton_rate / 1000) * weight_per_unit_in_kg
+                    let rate_per_kg = flt(row.custom_ton_rate) / 1000;
+                    let new_rate = flt(rate_per_kg * weight_kg, precision("rate", row));
+
+                    row._updating_from_ton_rate = true;
+                    frappe.model.set_value(cdt, cdn, "rate", new_rate);
+                }
+            }
+        });
+    },
+
+    // When rate is set manually, calculate the ton_rate based on weight
+    rate: function(frm, cdt, cdn) {
+        if (frm.doc.docstatus !== 0) return;
+
+        let row = locals[cdt][cdn];
+        if (!row.item_code || !row.rate) return;
+
+        // Prevent recursive updates
+        if (row._updating_from_ton_rate) {
+            row._updating_from_ton_rate = false;
+            return;
+        }
+
+        frappe.call({
+            method: "expenses_management.expenses_management.sales_invoice.sales_invoice.get_item_weight",
+            args: {
+                item_code: row.item_code
+            },
+            callback: function(r) {
+                if (r.message && r.message.weight_per_unit > 0) {
+                    let weight_kg = r.message.weight_in_kg;
+                    // Formula: ton_rate = (rate / weight_per_unit_in_kg) * 1000
+                    let ton_rate = flt((row.rate / weight_kg) * 1000, 2);
+
+                    row._updating_from_rate = true;
+                    frappe.model.set_value(cdt, cdn, "custom_ton_rate", ton_rate);
+                }
+            }
+        });
     }
 });

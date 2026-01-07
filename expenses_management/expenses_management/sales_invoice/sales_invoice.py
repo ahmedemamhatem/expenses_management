@@ -485,7 +485,7 @@ def validate_customer_credit(doc, method=None):
 
 def get_customer_total_outstanding(customer, company, exclude_invoice=None):
     """Get total outstanding amount for a customer in a specific company"""
-    
+
     if exclude_invoice:
         result = frappe.db.sql(
             """
@@ -515,3 +515,91 @@ def get_customer_total_outstanding(customer, company, exclude_invoice=None):
         )
 
     return frappe.utils.flt(result[0].total_outstanding) if result else 0
+
+
+@frappe.whitelist()
+def get_item_weight(item_code):
+    """Get item weight per unit and convert to kg for ton rate calculation.
+
+    Returns:
+        dict: {
+            weight_per_unit: original weight,
+            weight_uom: original UOM,
+            weight_in_kg: weight converted to kg
+        }
+    """
+    if not item_code:
+        return {"weight_per_unit": 0, "weight_uom": "", "weight_in_kg": 0}
+
+    item = frappe.db.get_value(
+        "Item",
+        item_code,
+        ["weight_per_unit", "weight_uom"],
+        as_dict=True
+    )
+
+    if not item or not item.weight_per_unit:
+        return {"weight_per_unit": 0, "weight_uom": "", "weight_in_kg": 0}
+
+    weight = frappe.utils.flt(item.weight_per_unit)
+    weight_uom = item.weight_uom or "Kg"
+
+    # Convert to kg
+    weight_in_kg = convert_weight_to_kg(weight, weight_uom)
+
+    return {
+        "weight_per_unit": weight,
+        "weight_uom": weight_uom,
+        "weight_in_kg": weight_in_kg
+    }
+
+
+def convert_weight_to_kg(weight, from_uom):
+    """Convert weight to kilograms"""
+    if not from_uom or from_uom.lower() in ["kg", "kilogram", "kilograms"]:
+        return weight
+
+    # Try to get conversion factor from UOM Conversion Factor
+    conversion = frappe.db.get_value(
+        "UOM Conversion Factor",
+        {"from_uom": from_uom, "to_uom": "Kg"},
+        "value"
+    )
+
+    if conversion:
+        return frappe.utils.flt(weight) * frappe.utils.flt(conversion)
+
+    # Try reverse conversion
+    conversion = frappe.db.get_value(
+        "UOM Conversion Factor",
+        {"from_uom": "Kg", "to_uom": from_uom},
+        "value"
+    )
+
+    if conversion and frappe.utils.flt(conversion) > 0:
+        return frappe.utils.flt(weight) / frappe.utils.flt(conversion)
+
+    # Common conversions if not found in UOM Conversion Factor
+    common_conversions = {
+        "gram": 0.001,
+        "grams": 0.001,
+        "g": 0.001,
+        "ton": 1000,
+        "tons": 1000,
+        "tonne": 1000,
+        "tonnes": 1000,
+        "pound": 0.453592,
+        "pounds": 0.453592,
+        "lb": 0.453592,
+        "lbs": 0.453592,
+        "ounce": 0.0283495,
+        "ounces": 0.0283495,
+        "oz": 0.0283495
+    }
+
+    from_uom_lower = from_uom.lower()
+    if from_uom_lower in common_conversions:
+        return frappe.utils.flt(weight) * common_conversions[from_uom_lower]
+
+    # Default: assume it's already in kg
+    return weight
