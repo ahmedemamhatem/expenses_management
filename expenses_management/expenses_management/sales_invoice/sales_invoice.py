@@ -352,20 +352,23 @@ def validate_customer_credit(doc, method=None):
     if doc.is_return:
         return
 
-    # Get customer data
-    customer = frappe.get_doc("Customer", doc.customer)
+    # Get customer data using direct SQL to avoid import errors from child table doctypes
+    # (e.g., KSA Compliance module's Additional Buyer IDs may cause import failures)
+    skip_blocking = frappe.db.get_value("Customer", doc.customer, "custom_stop_payment_terms") == 1
 
-    # Check if Stop Payment Terms is set (skip blocking, only warn)
-    skip_blocking = customer.get("custom_stop_payment_terms") == 1
+    # Get credit limit for the current company using direct SQL
+    credit_limit_data = frappe.db.get_value(
+        "Customer Credit Limit",
+        {"parent": doc.customer, "company": doc.company},
+        ["credit_limit", "bypass_credit_limit_check"],
+        as_dict=True
+    )
 
-    # Get credit limit for the current company
     customer_credit_limit = 0
     bypass_credit_limit = False
-    for cl in customer.get("credit_limits", []):
-        if cl.company == doc.company:
-            customer_credit_limit = frappe.utils.flt(cl.credit_limit)
-            bypass_credit_limit = cl.get("bypass_credit_limit_check") == 1
-            break
+    if credit_limit_data:
+        customer_credit_limit = frappe.utils.flt(credit_limit_data.credit_limit)
+        bypass_credit_limit = credit_limit_data.bypass_credit_limit_check == 1
 
     # Get current GL balance for this customer (includes all: invoices, payments, JEs)
     current_gl_balance = get_customer_gl_balance(doc.customer, doc.company)
@@ -374,7 +377,11 @@ def validate_customer_credit(doc, method=None):
     current_invoice_outstanding = get_customer_total_outstanding(doc.customer, doc.company, exclude_invoice=doc.name)
 
     # Outstanding amount from this invoice
-    invoice_outstanding = frappe.utils.flt(doc.outstanding_amount)
+    # During validate, outstanding_amount may not be calculated yet, so compute it manually
+    # Outstanding = grand_total (or rounded_total) - paid_amount
+    grand_total = frappe.utils.flt(doc.rounded_total) or frappe.utils.flt(doc.grand_total)
+    paid_amount = frappe.utils.flt(doc.paid_amount)
+    invoice_outstanding = grand_total - paid_amount
 
     # Case 1: No credit limit (0 or not set) → Must pay fully
     if customer_credit_limit <= 0:
