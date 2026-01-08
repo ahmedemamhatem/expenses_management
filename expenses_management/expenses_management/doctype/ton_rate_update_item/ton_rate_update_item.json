@@ -16,6 +16,10 @@
   "column_break_2",
   "new_rate",
   "rate_difference",
+  "section_break_min_max",
+  "minimum_rate",
+  "column_break_min_max",
+  "maximum_rate",
   "section_break_info",
   "item_price_name",
   "column_break_3",
@@ -101,6 +105,31 @@
    "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Rate Difference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_min_max",
+   "fieldtype": "Section Break",
+   "label": "Rate Limits"
+  },
+  {
+   "description": "Minimum allowed rate for this item",
+   "fieldname": "minimum_rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Minimum Rate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_min_max",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Maximum allowed rate for this item",
+   "fieldname": "maximum_rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Maximum Rate",
    "read_only": 1
   },
   {

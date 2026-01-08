@@ -95,6 +95,20 @@ frappe.ui.form.on('Ton Rate Update', {
 		}
 	},
 
+	minimum_ton_rate: function(frm) {
+		// Auto-recalculate rates when minimum ton rate changes
+		if (frm.doc.items && frm.doc.items.length > 0 && frm.doc.ton_rate) {
+			frm.trigger('calculate_rates');
+		}
+	},
+
+	maximum_ton_rate: function(frm) {
+		// Auto-recalculate rates when maximum ton rate changes
+		if (frm.doc.items && frm.doc.items.length > 0 && frm.doc.ton_rate) {
+			frm.trigger('calculate_rates');
+		}
+	},
+
 	get_items: function(frm) {
 		if (!frm.doc.item_group) {
 			frappe.msgprint(__('Please select an Item Group first'));
@@ -192,7 +206,9 @@ frappe.ui.form.on('Ton Rate Update', {
 			method: 'expenses_management.expenses_management.doctype.ton_rate_update.ton_rate_update.calculate_item_rates',
 			args: {
 				items: JSON.stringify(items_data),
-				ton_rate: frm.doc.ton_rate
+				ton_rate: frm.doc.ton_rate,
+				minimum_ton_rate: frm.doc.minimum_ton_rate || 0,
+				maximum_ton_rate: frm.doc.maximum_ton_rate || 0
 			},
 			freeze: true,
 			freeze_message: __('Calculating Rates...'),
@@ -203,6 +219,8 @@ frappe.ui.form.on('Ton Rate Update', {
 						if (idx < frm.doc.items.length) {
 							frm.doc.items[idx].new_rate = calc_item.new_rate;
 							frm.doc.items[idx].rate_difference = calc_item.rate_difference;
+							frm.doc.items[idx].minimum_rate = calc_item.minimum_rate;
+							frm.doc.items[idx].maximum_rate = calc_item.maximum_rate;
 						}
 					});
 

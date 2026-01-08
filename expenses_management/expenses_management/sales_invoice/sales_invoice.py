@@ -610,3 +610,148 @@ def convert_weight_to_kg(weight, from_uom):
 
     # Default: assume it's already in kg
     return weight
+
+
+def validate_item_rate_limits(doc, method=None):
+    """Validate that item rates in Sales Invoice are within min/max limits defined in Item Price.
+
+    This validation checks each item's rate against the custom_minimum_rate and custom_maximum_rate
+    fields in the Item Price record for the corresponding price list.
+    """
+
+    # Skip if return invoice
+    if doc.is_return:
+        return
+
+    # Skip if no selling_price_list
+    if not doc.selling_price_list:
+        return
+
+    rate_errors = []
+
+    for item in doc.items:
+        if not item.item_code:
+            continue
+
+        # Get Item Price with min/max rates for this item and price list
+        item_price = frappe.db.get_value(
+            "Item Price",
+            {
+                "item_code": item.item_code,
+                "price_list": doc.selling_price_list,
+            },
+            ["custom_minimum_rate", "custom_maximum_rate", "price_list_rate"],
+            as_dict=True
+        )
+
+        if not item_price:
+            continue
+
+        min_rate = frappe.utils.flt(item_price.custom_minimum_rate)
+        max_rate = frappe.utils.flt(item_price.custom_maximum_rate)
+        item_rate = frappe.utils.flt(item.rate)
+
+        # Skip if no min/max limits are defined
+        if min_rate <= 0 and max_rate <= 0:
+            continue
+
+        error_type = None
+
+        # Check minimum rate
+        if min_rate > 0 and item_rate < min_rate:
+            error_type = "below_min"
+
+        # Check maximum rate
+        if max_rate > 0 and item_rate > max_rate:
+            error_type = "above_max"
+
+        if error_type:
+            rate_errors.append({
+                "idx": item.idx,
+                "item_code": item.item_code,
+                "item_name": item.item_name,
+                "rate": item_rate,
+                "min_rate": min_rate,
+                "max_rate": max_rate,
+                "standard_rate": frappe.utils.flt(item_price.price_list_rate),
+                "error_type": error_type
+            })
+
+    if rate_errors:
+        message = build_rate_limit_error_message(rate_errors)
+        frappe.throw(message, title=_("خطأ في سعر الصنف"))
+
+
+def build_rate_limit_error_message(rate_errors):
+    """Build formatted error message for rate limit violations in Arabic"""
+
+    message_parts = []
+
+    message_parts.append("""
+        <div style="margin-bottom: 15px;">
+            <h4 style="color: #e74c3c; margin-bottom: 10px;">
+                <i class="fa fa-exclamation-triangle"></i>
+                سعر الصنف خارج النطاق المسموح
+            </h4>
+            <table class="table table-bordered table-sm" style="margin: 0;">
+                <thead style="background-color: #f8d7da;">
+                    <tr>
+                        <th style="text-align: center; width: 60px;">السطر</th>
+                        <th style="text-align: center;">الصنف</th>
+                        <th style="text-align: center;">السعر المدخل</th>
+                        <th style="text-align: center;">الحد الأدنى</th>
+                        <th style="text-align: center;">الحد الأقصى</th>
+                        <th style="text-align: center;">السعر المعياري</th>
+                        <th style="text-align: center;">الخطأ</th>
+                    </tr>
+                </thead>
+                <tbody>
+    """)
+
+    for err in rate_errors:
+        error_text = "أقل من الحد الأدنى" if err['error_type'] == "below_min" else "أعلى من الحد الأقصى"
+        error_color = "#e74c3c"
+
+        min_display = frappe.utils.fmt_money(err['min_rate']) if err['min_rate'] > 0 else "-"
+        max_display = frappe.utils.fmt_money(err['max_rate']) if err['max_rate'] > 0 else "-"
+
+        message_parts.append(f"""
+            <tr>
+                <td style="text-align: center;">{err['idx']}</td>
+                <td style="text-align: center;">
+                    <strong>{err['item_code']}</strong><br>
+                    <small style="color: #666;">{err['item_name']}</small>
+                </td>
+                <td style="text-align: center; color: {error_color};">
+                    <strong>{frappe.utils.fmt_money(err['rate'])}</strong>
+                </td>
+                <td style="text-align: center; color: #27ae60;">
+                    {min_display}
+                </td>
+                <td style="text-align: center; color: #e67e22;">
+                    {max_display}
+                </td>
+                <td style="text-align: center; color: #2980b9;">
+                    {frappe.utils.fmt_money(err['standard_rate'])}
+                </td>
+                <td style="text-align: center; color: {error_color};">
+                    <strong>{error_text}</strong>
+                </td>
+            </tr>
+        """)
+
+    message_parts.append("""
+                </tbody>
+            </table>
+        </div>
+    """)
+
+    # Summary
+    message_parts.append(f"""
+        <div style="margin-top: 15px; padding: 10px; background-color: #fff3cd; border-radius: 5px; border-right: 4px solid #ffc107;">
+            <strong>ملاحظة:</strong>
+            يجب تعديل الأسعار لتكون ضمن النطاق المسموح أو التواصل مع المسؤول للحصول على إذن
+        </div>
+    """)
+
+    return "".join(message_parts)

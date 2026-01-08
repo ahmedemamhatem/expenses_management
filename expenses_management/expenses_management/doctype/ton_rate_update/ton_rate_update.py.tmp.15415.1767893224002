@@ -10,7 +10,14 @@ from frappe.utils import flt, getdate, nowdate
 class TonRateUpdate(Document):
 	def validate(self):
 		self.validate_items()
+		self.validate_rate_limits()
 		self.set_status()
+
+	def validate_rate_limits(self):
+		"""Validate that minimum rate is less than maximum rate if both are set"""
+		if self.minimum_ton_rate and self.maximum_ton_rate:
+			if flt(self.minimum_ton_rate) > flt(self.maximum_ton_rate):
+				frappe.throw(_("Minimum Ton Rate cannot be greater than Maximum Ton Rate"))
 
 	def validate_items(self):
 		"""Validate that items have weight defined"""
@@ -51,7 +58,7 @@ class TonRateUpdate(Document):
 		self.set_status()
 
 	def update_item_prices(self):
-		"""Create or update Item Price records with new rates including min/max rates"""
+		"""Create or update Item Price records with new rates"""
 		updated_count = 0
 		created_count = 0
 		skipped_count = 0
@@ -77,20 +84,15 @@ class TonRateUpdate(Document):
 				as_dict=True
 			)
 
-			# Prepare update values including min/max rates
-			update_values = {
-				"price_list_rate": flt(item.new_rate),
-				"valid_from": self.posting_date,
-				"custom_minimum_rate": flt(item.minimum_rate),
-				"custom_maximum_rate": flt(item.maximum_rate)
-			}
-
 			if existing_price:
 				# Update existing Item Price
 				frappe.db.set_value(
 					"Item Price",
 					existing_price.name,
-					update_values
+					{
+						"price_list_rate": flt(item.new_rate),
+						"valid_from": self.posting_date
+					}
 				)
 				# Store the item price name for reference
 				item.db_set("item_price_name", existing_price.name)
@@ -104,8 +106,6 @@ class TonRateUpdate(Document):
 				item_price.uom = item.stock_uom
 				item_price.price_list_rate = flt(item.new_rate)
 				item_price.valid_from = self.posting_date
-				item_price.custom_minimum_rate = flt(item.minimum_rate)
-				item_price.custom_maximum_rate = flt(item.maximum_rate)
 				item_price.selling = frappe.db.get_value("Price List", self.price_list, "selling") or 0
 				item_price.buying = frappe.db.get_value("Price List", self.price_list, "buying") or 0
 				item_price.currency = self.currency or frappe.db.get_value("Price List", self.price_list, "currency")
@@ -237,7 +237,7 @@ def get_descendant_groups(item_group):
 
 
 @frappe.whitelist()
-def calculate_item_rates(items, ton_rate, weight_uom="Kg", minimum_ton_rate=0, maximum_ton_rate=0):
+def calculate_item_rates(items, ton_rate, weight_uom="Kg"):
 	"""
 	Calculate new rates for items based on ton rate and item weight.
 
@@ -247,11 +247,9 @@ def calculate_item_rates(items, ton_rate, weight_uom="Kg", minimum_ton_rate=0, m
 		items: List of items (JSON string)
 		ton_rate: Rate per ton (1000 kg)
 		weight_uom: Weight unit of measure (default Kg)
-		minimum_ton_rate: Minimum rate per ton for validation
-		maximum_ton_rate: Maximum rate per ton for validation
 
 	Returns:
-		List of items with calculated new rates including min/max rates
+		List of items with calculated new rates
 	"""
 	import json
 
@@ -259,13 +257,9 @@ def calculate_item_rates(items, ton_rate, weight_uom="Kg", minimum_ton_rate=0, m
 		items = json.loads(items)
 
 	ton_rate = flt(ton_rate)
-	minimum_ton_rate = flt(minimum_ton_rate)
-	maximum_ton_rate = flt(maximum_ton_rate)
 
 	# Rate per kg (ton = 1000 kg)
 	rate_per_kg = ton_rate / 1000
-	min_rate_per_kg = minimum_ton_rate / 1000 if minimum_ton_rate > 0 else 0
-	max_rate_per_kg = maximum_ton_rate / 1000 if maximum_ton_rate > 0 else 0
 
 	for item in items:
 		weight = flt(item.get("weight_per_unit", 0))
@@ -274,8 +268,6 @@ def calculate_item_rates(items, ton_rate, weight_uom="Kg", minimum_ton_rate=0, m
 		if weight <= 0:
 			item["new_rate"] = 0
 			item["rate_difference"] = 0
-			item["minimum_rate"] = 0
-			item["maximum_rate"] = 0
 			continue
 
 		# Convert weight to kg if necessary
@@ -287,10 +279,6 @@ def calculate_item_rates(items, ton_rate, weight_uom="Kg", minimum_ton_rate=0, m
 
 		item["new_rate"] = new_rate
 		item["rate_difference"] = flt(new_rate - old_rate, 2)
-
-		# Calculate min/max rates based on weight
-		item["minimum_rate"] = flt(min_rate_per_kg * weight_in_kg, 2) if min_rate_per_kg > 0 else 0
-		item["maximum_rate"] = flt(max_rate_per_kg * weight_in_kg, 2) if max_rate_per_kg > 0 else 0
 
 	return items
 
