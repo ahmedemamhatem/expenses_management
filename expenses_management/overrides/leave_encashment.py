@@ -7,7 +7,7 @@ from hrms.hr.doctype.leave_encashment.leave_encashment import LeaveEncashment
 class CustomLeaveEncashment(LeaveEncashment):
     """
     Custom Leave Encashment that calculates encashment amount from Salary Structure Assignment
-    Gross = Base + Housing Allowance (custom_ha) + Transport Allowance (custom_ta) + Other Allowances + Max Benefits
+    Gross = Base + Housing Allowance (custom_ha) + Transport Allowance (custom_ta) + Other Allowances
     Per Day = Gross / 30
     """
 
@@ -29,7 +29,7 @@ class CustomLeaveEncashment(LeaveEncashment):
     def get_per_day_amount_from_ssa(self):
         """
         Calculate per day encashment amount from Salary Structure Assignment
-        Gross = Base + Housing Allowance + Transport Allowance + Other Allowances + Max Benefits
+        Gross = Base + Housing Allowance + Transport Allowance + Other Allowances
         Per Day = Gross / 30
         """
         ssa = frappe.db.get_value(
@@ -40,7 +40,7 @@ class CustomLeaveEncashment(LeaveEncashment):
                 "docstatus": 1,
                 "from_date": ("<=", self.encashment_date)
             },
-            ["base", "custom_ha", "custom_ta", "custom_other_allowances", "max_benefits"],
+            ["base", "custom_ha", "custom_ta", "custom_other_allowances"],
             as_dict=True,
             order_by="from_date desc"
         )
@@ -53,8 +53,7 @@ class CustomLeaveEncashment(LeaveEncashment):
             flt(ssa.get("base", 0)) +
             flt(ssa.get("custom_ha", 0)) +
             flt(ssa.get("custom_ta", 0)) +
-            flt(ssa.get("custom_other_allowances", 0)) +
-            flt(ssa.get("max_benefits", 0))
+            flt(ssa.get("custom_other_allowances", 0))
         )
 
         # Per day amount (assuming 30 days per month)
