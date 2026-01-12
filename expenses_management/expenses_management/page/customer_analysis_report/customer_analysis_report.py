@@ -315,15 +315,10 @@ def calculate_period_totals(values, extra_where, customer_join, customer_where):
                     LIMIT 1
                 ), 0)
                 ELSE -sii.stock_qty * COALESCE(sle.valuation_rate, (
-                    SELECT pii.base_rate
-                    FROM `tabPurchase Invoice Item` pii
-                    INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
-                    WHERE pii.item_code = sii.item_code
-                    AND pi.docstatus = 1
-                    AND pi.branch = si.branch
-                    AND pi.posting_date <= si.posting_date
-                    ORDER BY pi.posting_date DESC, pi.creation DESC
-                    LIMIT 1
+                    SELECT COALESCE(SUM(b.actual_qty * b.valuation_rate) / NULLIF(SUM(b.actual_qty), 0), 0)
+                    FROM `tabBin` b
+                    WHERE b.item_code = sii.item_code
+                    AND b.actual_qty > 0
                 ), 0)
             END), 0) as cost_of_goods
         FROM `tabSales Invoice Item` sii
@@ -450,7 +445,7 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
 
     all_time_map = {d.customer: d for d in all_time_data}
 
-    # All-time revenue (using valuation_rate from SLE, fallback to last Purchase Invoice rate in same branch)
+    # All-time revenue (using valuation_rate from SLE, fallback to last Purchase Invoice rate in same branch for sales, average Bin valuation for returns)
     all_time_revenue = frappe.db.sql("""
         SELECT
             si.customer,
@@ -468,15 +463,10 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
                     LIMIT 1
                 ), 0)
                 ELSE -sii.stock_qty * COALESCE(sle.valuation_rate, (
-                    SELECT pii.base_rate
-                    FROM `tabPurchase Invoice Item` pii
-                    INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
-                    WHERE pii.item_code = sii.item_code
-                    AND pi.docstatus = 1
-                    AND pi.branch = si.branch
-                    AND pi.posting_date <= si.posting_date
-                    ORDER BY pi.posting_date DESC, pi.creation DESC
-                    LIMIT 1
+                    SELECT COALESCE(SUM(b.actual_qty * b.valuation_rate) / NULLIF(SUM(b.actual_qty), 0), 0)
+                    FROM `tabBin` b
+                    WHERE b.item_code = sii.item_code
+                    AND b.actual_qty > 0
                 ), 0)
             END), 0) as cost_of_goods,
             COALESCE(SUM(CASE WHEN si.is_return = 0 THEN sii.qty ELSE 0 END), 0) as total_qty
@@ -492,7 +482,7 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
 
     all_time_revenue_map = {d.customer: d for d in all_time_revenue}
 
-    # Period revenue (using valuation_rate from SLE, fallback to last Purchase Invoice rate in same branch)
+    # Period revenue (using valuation_rate from SLE, fallback to last Purchase Invoice rate in same branch for sales, average Bin valuation for returns)
     period_revenue = frappe.db.sql(f"""
         SELECT
             si.customer,
@@ -510,15 +500,10 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
                     LIMIT 1
                 ), 0)
                 ELSE -sii.stock_qty * COALESCE(sle.valuation_rate, (
-                    SELECT pii.base_rate
-                    FROM `tabPurchase Invoice Item` pii
-                    INNER JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
-                    WHERE pii.item_code = sii.item_code
-                    AND pi.docstatus = 1
-                    AND pi.branch = si.branch
-                    AND pi.posting_date <= si.posting_date
-                    ORDER BY pi.posting_date DESC, pi.creation DESC
-                    LIMIT 1
+                    SELECT COALESCE(SUM(b.actual_qty * b.valuation_rate) / NULLIF(SUM(b.actual_qty), 0), 0)
+                    FROM `tabBin` b
+                    WHERE b.item_code = sii.item_code
+                    AND b.actual_qty > 0
                 ), 0)
             END), 0) as cost_of_goods
         FROM `tabSales Invoice Item` sii
