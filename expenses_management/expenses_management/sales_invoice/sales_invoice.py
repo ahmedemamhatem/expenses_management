@@ -308,6 +308,24 @@ def get_user_pos_warehouse():
     return None
 
 
+@frappe.whitelist()
+def get_pos_profile_warehouse(owner=None):
+    """Get warehouse from POS Profile for a specific user (called from Client Script)"""
+    user = owner or frappe.session.user
+
+    pos_profile = frappe.db.get_value(
+        "POS Profile User",
+        {"user": user},
+        "parent"
+    )
+
+    if pos_profile:
+        warehouse = frappe.db.get_value("POS Profile", pos_profile, "warehouse")
+        return {"warehouse": warehouse}
+
+    return {"warehouse": None}
+
+
 def get_customer_gl_balance(customer, company):
     """Get customer balance from GL Entry for a specific company.
     This includes all transactions: invoices, payments, journal entries.
@@ -439,8 +457,10 @@ def validate_customer_credit(doc, method=None):
             )
 
     # Case 3: Check for overdue invoices using due_date
+    # Only block if customer has NO credit limit or would exceed credit limit
+    # If within credit limit, just show warning for overdue invoices
     today = frappe.utils.today()
-    
+
     # ✅ Get overdue invoices - only where outstanding > 1 SAR
     overdue_invoices = frappe.db.sql("""
         SELECT name, due_date, outstanding_amount
@@ -453,31 +473,35 @@ def validate_customer_credit(doc, method=None):
           AND due_date < %s
         ORDER BY due_date ASC
     """, (doc.customer, doc.company, today), as_dict=True)
-    
+
     # Calculate total overdue (only amounts > 1 are included)
     total_overdue = sum(frappe.utils.flt(inv.outstanding_amount) for inv in overdue_invoices)
 
-    # ✅ Block if there are any overdue invoices (total > 0 means we have invoices with outstanding > 1)
+    # ✅ Check overdue invoices - but allow if within credit limit
     if total_overdue > 0:
         # Build invoice details (show first 5)
         invoice_details = ""
         for i, inv in enumerate(overdue_invoices[:5]):
             invoice_details += "• {0} - {1} ريال (تاريخ الاستحقاق: {2})<br>".format(
-                inv.name, 
+                inv.name,
                 round(inv.outstanding_amount, 2),
                 inv.due_date
             )
-        
+
         if len(overdue_invoices) > 5:
             invoice_details += "• ... و {0} فواتير أخرى".format(len(overdue_invoices) - 5)
-        
+
         message = _(
             "لدى العميل مبالغ متأخرة عن تاريخ الاستحقاق.<br><br>"
             "<b>إجمالي المبالغ المتأخرة: {0} ريال</b><br><br>"
             "<b>الفواتير المتأخرة:</b><br>{1}"
         ).format(round(total_overdue, 2), invoice_details)
-        
-        if skip_blocking:
+
+        # If customer has credit limit and new balance is within limit, just show warning
+        # Otherwise block (unless skip_blocking is enabled)
+        within_credit_limit = customer_credit_limit > 0 and new_total_balance <= customer_credit_limit
+
+        if skip_blocking or within_credit_limit:
             frappe.msgprint(
                 msg=message,
                 title=_("تحذير: مبالغ متأخرة"),
