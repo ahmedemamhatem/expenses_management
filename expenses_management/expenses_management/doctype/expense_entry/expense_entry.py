@@ -4,14 +4,40 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt, getdate
+from frappe.utils import flt
+
+from erpnext.accounts.general_ledger import make_gl_entries, make_reverse_gl_entries
+from erpnext.accounts.utils import get_fiscal_years
 
 
 class ExpenseEntry(Document):
 	def validate(self):
 		self.set_paid_from_account()
+		self.validate_tax_template()
 		self.calculate_taxes()
 		self.calculate_totals()
+
+	def validate_tax_template(self):
+		"""Validate that taxable items have a tax template, fetch from Expense Type if not set"""
+		for item in self.expense_items:
+			if item.taxable and not item.tax_template:
+				# Try to fetch default tax template from Expense Type
+				if item.expense_type:
+					default_tax_template = frappe.db.get_value(
+						"Expense Type", item.expense_type, "default_tax_template"
+					)
+					if default_tax_template:
+						item.tax_template = default_tax_template
+					else:
+						frappe.throw(
+							_("Row {0}: Tax Template is required when Taxable is checked. Please set a Default Tax Template in Expense Type {1} or select one manually.").format(
+								item.idx, frappe.bold(item.expense_type)
+							)
+						)
+				else:
+					frappe.throw(
+						_("Row {0}: Tax Template is required when Taxable is checked").format(item.idx)
+					)
 
 	def set_paid_from_account(self):
 		"""Set paid from account based on bank account or mode of payment"""
@@ -67,54 +93,47 @@ class ExpenseEntry(Document):
 			self.total_amount_before_tax += flt(item.amount_before_tax)
 
 	def on_submit(self):
-		"""Create Journal Entry on submit"""
-		self.create_journal_entry()
+		"""Create GL Entries on submit"""
+		self.make_gl_entries()
 
 	def on_cancel(self):
-		"""Cancel linked Journal Entry"""
-		if self.journal_entry:
-			je = frappe.get_doc("Journal Entry", self.journal_entry)
-			if je.docstatus == 1:
-				je.flags.ignore_permissions = True
-				je.cancel()
-				frappe.msgprint(_("Journal Entry {0} has been cancelled").format(
-					frappe.get_desk_link("Journal Entry", je.name)
-				))
+		"""Reverse GL Entries on cancel"""
+		self.make_gl_entries(cancel=True)
 
-	def create_journal_entry(self):
-		"""Create Journal Entry for the expense"""
+	def make_gl_entries(self, cancel=False):
+		"""Create or reverse GL Entries for the expense"""
 		if not self.paid_from_account:
 			if not self.bank_account and not self.mode_of_payment:
 				frappe.throw(_("Please select either a Bank Account or Mode of Payment"))
 			else:
 				frappe.throw(_("Could not determine payment account. Please check your Bank Account or Mode of Payment setup."))
 
-		# Create Journal Entry
-		je = frappe.new_doc("Journal Entry")
-		je.voucher_type = "Journal Entry"
-		je.posting_date = self.posting_date
-		je.company = self.company
-		je.user_remark = self.remarks or f"Expense Entry: {self.name}"
+		gl_entries = self.get_gl_entries()
 
-		# Credit entry - Payment from bank/cash account
-		je.append("accounts", {
-			"account": self.paid_from_account,
-			"credit_in_account_currency": self.total_amount,
-			"cost_center": self.cost_center,
-			"branch": self.branch
-		})
+		if gl_entries:
+			make_gl_entries(gl_entries, cancel=cancel, merge_entries=True)
 
-		# Group expenses by account for debit entries
+	def get_gl_entries(self):
+		"""Build list of GL Entry dicts"""
+		gl_entries = []
+
+		# Get fiscal year
+		fiscal_years = get_fiscal_years(self.posting_date, company=self.company)
+		if not fiscal_years:
+			frappe.throw(_("No fiscal year found for posting date {0}").format(self.posting_date))
+		fiscal_year = fiscal_years[0][0]
+
+		# Group expenses by account
 		expense_accounts = {}
 		tax_accounts = {}
 
 		for item in self.expense_items:
-			# Debit entry - Expense account (amount before tax)
+			# Expense account (amount before tax)
 			if item.expense_account not in expense_accounts:
 				expense_accounts[item.expense_account] = 0
 			expense_accounts[item.expense_account] += flt(item.amount_before_tax)
 
-			# Debit entry - Tax account (if taxable)
+			# Tax account (if taxable)
 			if item.taxable and item.tax_amount > 0 and item.tax_template:
 				tax_template_doc = frappe.get_doc("Purchase Taxes and Charges Template", item.tax_template)
 				for tax in tax_template_doc.taxes:
@@ -125,31 +144,63 @@ class ExpenseEntry(Document):
 						tax_portion = flt(item.tax_amount * (tax.rate / self.get_tax_rate(item.tax_template)), 2)
 						tax_accounts[tax.account_head] += tax_portion
 
-		# Add expense account entries
+		# Build against string for GL entries
+		against_accounts = list(expense_accounts.keys()) + list(tax_accounts.keys())
+		against_str = ", ".join(against_accounts)
+
+		# Credit entry - Payment from bank/cash account
+		gl_entries.append(
+			self.get_gl_dict({
+				"account": self.paid_from_account,
+				"credit": flt(self.total_amount),
+				"credit_in_account_currency": flt(self.total_amount),
+				"against": against_str,
+				"cost_center": self.cost_center,
+			}, fiscal_year)
+		)
+
+		# Debit entries - Expense accounts
 		for account, amount in expense_accounts.items():
-			je.append("accounts", {
-				"account": account,
-				"debit_in_account_currency": amount,
-				"cost_center": self.cost_center,
-				"branch": self.branch
-			})
+			gl_entries.append(
+				self.get_gl_dict({
+					"account": account,
+					"debit": flt(amount),
+					"debit_in_account_currency": flt(amount),
+					"against": self.paid_from_account,
+					"cost_center": self.cost_center,
+				}, fiscal_year)
+			)
 
-		# Add tax account entries
+		# Debit entries - Tax accounts
 		for account, amount in tax_accounts.items():
-			je.append("accounts", {
-				"account": account,
-				"debit_in_account_currency": amount,
-				"cost_center": self.cost_center,
-				"branch": self.branch
-			})
+			gl_entries.append(
+				self.get_gl_dict({
+					"account": account,
+					"debit": flt(amount),
+					"debit_in_account_currency": flt(amount),
+					"against": self.paid_from_account,
+					"cost_center": self.cost_center,
+				}, fiscal_year)
+			)
 
-		je.flags.ignore_permissions = True
-		je.insert()
-		je.submit()
+		return gl_entries
 
-		# Link the Journal Entry to this Expense Entry
-		self.db_set("journal_entry", je.name)
-
-		frappe.msgprint(_("Journal Entry {0} created successfully").format(
-			frappe.get_desk_link("Journal Entry", je.name)
-		))
+	def get_gl_dict(self, args, fiscal_year):
+		"""Return a GL Entry dict with common fields populated"""
+		gl_dict = frappe._dict({
+			"company": self.company,
+			"posting_date": self.posting_date,
+			"fiscal_year": fiscal_year,
+			"voucher_type": self.doctype,
+			"voucher_no": self.name,
+			"remarks": self.remarks or f"Expense Entry: {self.name}",
+			"debit": 0,
+			"credit": 0,
+			"debit_in_account_currency": 0,
+			"credit_in_account_currency": 0,
+			"is_opening": "No",
+			"party_type": None,
+			"party": None,
+		})
+		gl_dict.update(args)
+		return gl_dict
