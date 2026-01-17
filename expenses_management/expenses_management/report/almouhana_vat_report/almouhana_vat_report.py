@@ -721,14 +721,17 @@ def get_purchase_vat_totals(filters):
     where_clause = " AND ".join(conditions)
 
     # Get invoices with VAT from taxes table (only Tax account type rows)
+    # Also get transport/expense charges to subtract from net amount
+    # Transport fees (أجور نقل) are stored as negative values in the taxes table
     query = f"""
         SELECT
             pi.name AS invoice,
             pi.is_return,
             pi.currency,
             pi.custom_zatca_import_invoice,
-            pi.base_net_total AS net_amount,
-            COALESCE(vat.vat_amount, 0) AS vat_amount
+            pi.base_net_total AS gross_net_amount,
+            COALESCE(vat.vat_amount, 0) AS vat_amount,
+            COALESCE(transport.transport_amount, 0) AS transport_amount
         FROM `tabPurchase Invoice` pi
         LEFT JOIN (
             SELECT
@@ -739,6 +742,15 @@ def get_purchase_vat_totals(filters):
             WHERE acc.account_type = 'Tax'
             GROUP BY ptc.parent
         ) vat ON vat.parent = pi.name
+        LEFT JOIN (
+            SELECT
+                ptc.parent,
+                SUM(ptc.base_tax_amount) AS transport_amount
+            FROM `tabPurchase Taxes and Charges` ptc
+            INNER JOIN `tabAccount` acc ON acc.name = ptc.account_head
+            WHERE acc.account_type = 'Expense Account'
+            GROUP BY ptc.parent
+        ) transport ON transport.parent = pi.name
         WHERE {where_clause}
     """
 
@@ -746,7 +758,10 @@ def get_purchase_vat_totals(filters):
 
     for r in rows:
         is_return = bool(r.get("is_return"))
-        net_amount = abs(r.get("net_amount") or 0)
+        gross_net_amount = r.get("gross_net_amount") or 0
+        transport_amount = r.get("transport_amount") or 0  # This is negative for deductions
+        # Calculate actual net amount by adding transport fees (negative values reduce the total)
+        net_amount = abs(gross_net_amount + transport_amount)
         vat_amount = abs(r.get("vat_amount") or 0)
         currency = r.get("currency") or "SAR"
         is_import = int(r.get("custom_zatca_import_invoice") or 0) == 1
@@ -782,7 +797,6 @@ def get_purchase_vat_totals(filters):
 def get_expenses_vat_totals(filters):
     """
     Get expense VAT totals from GL entries for Expense Entry vouchers.
-    Uses GL entries because Expense Entry may not have a taxes child table.
     Only includes accounts with account_type = 'Tax'.
     """
     totals = {
