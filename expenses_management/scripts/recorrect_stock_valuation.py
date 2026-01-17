@@ -974,6 +974,326 @@ def check_valuation_status(item_code=None, warehouse=None):
 # CLI Interface
 # ============================================================================
 
+def fix_item_complete(item_code, from_date="2025-05-01"):
+    """
+    Complete fix for a single item across all warehouses.
+    This does everything we did manually for item 20001:
+    1. Delete cancelled SLE entries
+    2. Repost valuation for all warehouses
+    3. Fix incoming_rate on outgoing transactions
+
+    Usage:
+        bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.fix_item_complete --args "['20001']"
+    """
+    from erpnext.stock.doctype.repost_item_valuation.repost_item_valuation import repost
+
+    print(f"\n{'='*70}")
+    print(f"COMPLETE FIX FOR ITEM: {item_code}")
+    print(f"{'='*70}")
+
+    company = frappe.db.get_single_value("Global Defaults", "default_company")
+
+    # Step 1: Delete cancelled SLE entries
+    print("\n[Step 1] Deleting cancelled SLE entries...")
+    cancelled_count = frappe.db.sql("""
+        SELECT COUNT(*) FROM `tabStock Ledger Entry`
+        WHERE item_code = %s AND is_cancelled = 1
+    """, item_code)[0][0]
+
+    if cancelled_count > 0:
+        frappe.db.sql("""
+            DELETE FROM `tabStock Ledger Entry`
+            WHERE item_code = %s AND is_cancelled = 1
+        """, item_code)
+        frappe.db.commit()
+        print(f"  Deleted {cancelled_count} cancelled SLE entries")
+    else:
+        print("  No cancelled SLE entries found")
+
+    # Step 2: Disable accounting freeze temporarily
+    print("\n[Step 2] Checking accounting freeze...")
+    acc_settings = frappe.get_single("Accounts Settings")
+    old_freeze_date = acc_settings.acc_frozen_upto
+    if old_freeze_date:
+        print(f"  Temporarily disabling freeze (was: {old_freeze_date})")
+        frappe.db.set_single_value("Accounts Settings", "acc_frozen_upto", None)
+        frappe.db.commit()
+
+    # Step 3: Get all warehouses for this item
+    print("\n[Step 3] Getting warehouses...")
+    warehouses = frappe.db.sql_list("""
+        SELECT DISTINCT warehouse
+        FROM `tabStock Ledger Entry`
+        WHERE item_code = %s
+    """, item_code)
+    print(f"  Found {len(warehouses)} warehouses")
+
+    # Step 4: Repost valuation for each warehouse
+    print("\n[Step 4] Reposting valuation for each warehouse...")
+    errors = []
+    for wh in warehouses:
+        try:
+            # Get first SLE for this item+warehouse
+            first_sle = frappe.db.sql("""
+                SELECT posting_date, posting_time
+                FROM `tabStock Ledger Entry`
+                WHERE item_code = %s AND warehouse = %s
+                ORDER BY posting_date, posting_time, creation
+                LIMIT 1
+            """, (item_code, wh), as_dict=1)
+
+            if not first_sle:
+                continue
+
+            sle = first_sle[0]
+            print(f"  Reposting {wh[:40]}... from {sle.posting_date}")
+
+            # Create and submit Repost Item Valuation
+            repost_doc = frappe.new_doc("Repost Item Valuation")
+            repost_doc.based_on = "Item and Warehouse"
+            repost_doc.item_code = item_code
+            repost_doc.warehouse = wh
+            repost_doc.posting_date = sle.posting_date
+            repost_doc.posting_time = sle.posting_time
+            repost_doc.company = company
+            repost_doc.allow_negative_stock = 1
+            repost_doc.allow_zero_rate = 0
+            repost_doc.flags.ignore_links = True
+            repost_doc.flags.ignore_permissions = True
+            repost_doc.insert()
+            repost_doc.submit()
+
+            # Execute immediately
+            repost(repost_doc)
+            print(f"    Done")
+
+        except Exception as e:
+            frappe.db.rollback()
+            errors.append({'warehouse': wh, 'error': str(e)})
+            print(f"    Error: {e}")
+
+    frappe.db.commit()
+
+    # Step 5: Fix incoming_rate on outgoing transactions
+    print("\n[Step 5] Fixing incoming_rate on outgoing transactions...")
+    fixed_count = frappe.db.sql("""
+        UPDATE `tabStock Ledger Entry`
+        SET incoming_rate = valuation_rate
+        WHERE item_code = %s
+          AND actual_qty < 0
+          AND ABS(incoming_rate - valuation_rate) > 0.01
+    """, item_code)
+    frappe.db.commit()
+
+    # Count how many were fixed
+    remaining = frappe.db.sql("""
+        SELECT COUNT(*) FROM `tabStock Ledger Entry`
+        WHERE item_code = %s
+          AND actual_qty < 0
+          AND ABS(incoming_rate - valuation_rate) > 0.01
+    """, item_code)[0][0]
+    print(f"  Remaining mismatches: {remaining}")
+
+    # Step 6: Update bins
+    print("\n[Step 6] Updating bins...")
+    for wh in warehouses:
+        latest_sle = frappe.db.sql("""
+            SELECT qty_after_transaction, valuation_rate, stock_value
+            FROM `tabStock Ledger Entry`
+            WHERE item_code = %s AND warehouse = %s
+            ORDER BY posting_date DESC, posting_time DESC, creation DESC
+            LIMIT 1
+        """, (item_code, wh), as_dict=1)
+
+        if latest_sle:
+            sle = latest_sle[0]
+            bin_name = frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": wh})
+            if bin_name:
+                frappe.db.set_value("Bin", bin_name, {
+                    "actual_qty": sle.qty_after_transaction,
+                    "valuation_rate": sle.valuation_rate,
+                    "stock_value": sle.stock_value
+                }, update_modified=False)
+
+    frappe.db.commit()
+    print("  Bins updated")
+
+    # Step 7: Restore accounting freeze
+    if old_freeze_date:
+        print(f"\n[Step 7] Restoring accounting freeze to: {old_freeze_date}")
+        frappe.db.set_single_value("Accounts Settings", "acc_frozen_upto", old_freeze_date)
+        frappe.db.commit()
+
+    # Final summary
+    print(f"\n{'='*70}")
+    print("SUMMARY:")
+    print(f"  Cancelled SLE deleted: {cancelled_count}")
+    print(f"  Warehouses processed: {len(warehouses)}")
+    print(f"  Errors: {len(errors)}")
+
+    # Verify final state
+    stats = frappe.db.sql("""
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN valuation_rate = 0 THEN 1 ELSE 0 END) as zero_val,
+            SUM(CASE WHEN actual_qty < 0 AND ABS(incoming_rate - valuation_rate) > 0.01 THEN 1 ELSE 0 END) as mismatched
+        FROM `tabStock Ledger Entry`
+        WHERE item_code = %s
+    """, item_code, as_dict=1)[0]
+
+    print(f"\nFinal Stats for {item_code}:")
+    print(f"  Total SLE: {stats.total}")
+    print(f"  Zero valuation: {stats.zero_val}")
+    print(f"  Mismatched incoming_rate: {stats.mismatched}")
+    print(f"{'='*70}\n")
+
+    return {"errors": errors, "warehouses_processed": len(warehouses)}
+
+
+def fix_all_items_complete(from_date="2025-05-01", batch_size=50):
+    """
+    Complete fix for ALL items across all warehouses.
+    Loops through all items and applies the complete fix.
+
+    Usage:
+        bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.fix_all_items_complete
+    """
+    print(f"\n{'='*70}")
+    print("COMPLETE FIX FOR ALL ITEMS")
+    print(f"{'='*70}")
+
+    # Get all distinct items
+    items = frappe.db.sql_list("""
+        SELECT DISTINCT item_code
+        FROM `tabStock Ledger Entry`
+        ORDER BY item_code
+    """)
+
+    print(f"Total items to process: {len(items)}")
+
+    total_errors = []
+    processed = 0
+
+    for item_code in items:
+        processed += 1
+        print(f"\n[{processed}/{len(items)}] Processing {item_code}...")
+
+        try:
+            result = fix_item_complete(item_code, from_date)
+            if result.get("errors"):
+                total_errors.extend(result["errors"])
+        except Exception as e:
+            print(f"  Error processing {item_code}: {e}")
+            total_errors.append({"item_code": item_code, "error": str(e)})
+            frappe.db.rollback()
+
+        # Commit every batch_size items
+        if processed % batch_size == 0:
+            frappe.db.commit()
+            print(f"\n--- Committed batch {processed}/{len(items)} ---\n")
+
+    frappe.db.commit()
+
+    # Final summary
+    print(f"\n{'='*70}")
+    print("FINAL SUMMARY")
+    print(f"{'='*70}")
+    print(f"Total items processed: {processed}")
+    print(f"Total errors: {len(total_errors)}")
+
+    if total_errors:
+        print("\nErrors:")
+        for e in total_errors[:20]:
+            print(f"  - {e}")
+        if len(total_errors) > 20:
+            print(f"  ... and {len(total_errors) - 20} more")
+
+    # Get overall stats
+    stats = frappe.db.sql("""
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN valuation_rate = 0 THEN 1 ELSE 0 END) as zero_val,
+            SUM(CASE WHEN actual_qty < 0 AND ABS(incoming_rate - valuation_rate) > 0.01 THEN 1 ELSE 0 END) as mismatched,
+            COUNT(DISTINCT item_code) as items
+        FROM `tabStock Ledger Entry`
+    """, as_dict=1)[0]
+
+    print(f"\nOverall Stats:")
+    print(f"  Total SLE: {stats.total}")
+    print(f"  Distinct items: {stats.items}")
+    print(f"  Zero valuation: {stats.zero_val}")
+    print(f"  Mismatched incoming_rate: {stats.mismatched}")
+    print(f"{'='*70}\n")
+
+    return {"processed": processed, "errors": total_errors}
+
+
+def get_items_needing_fix():
+    """
+    Get list of items that need fixing (have issues).
+
+    Usage:
+        bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.get_items_needing_fix
+    """
+    print(f"\n{'='*70}")
+    print("ITEMS NEEDING FIX")
+    print(f"{'='*70}")
+
+    # Items with zero valuation rate
+    zero_val = frappe.db.sql("""
+        SELECT DISTINCT item_code, COUNT(*) as cnt
+        FROM `tabStock Ledger Entry`
+        WHERE valuation_rate = 0
+        GROUP BY item_code
+        ORDER BY cnt DESC
+    """, as_dict=1)
+
+    print(f"\nItems with zero valuation rate: {len(zero_val)}")
+    for item in zero_val[:20]:
+        print(f"  {item.item_code}: {item.cnt} entries")
+
+    # Items with mismatched incoming_rate
+    mismatched = frappe.db.sql("""
+        SELECT DISTINCT item_code, COUNT(*) as cnt
+        FROM `tabStock Ledger Entry`
+        WHERE actual_qty < 0 AND ABS(incoming_rate - valuation_rate) > 0.01
+        GROUP BY item_code
+        ORDER BY cnt DESC
+    """, as_dict=1)
+
+    print(f"\nItems with mismatched incoming_rate: {len(mismatched)}")
+    for item in mismatched[:20]:
+        print(f"  {item.item_code}: {item.cnt} entries")
+
+    # Items with cancelled entries
+    cancelled = frappe.db.sql("""
+        SELECT DISTINCT item_code, COUNT(*) as cnt
+        FROM `tabStock Ledger Entry`
+        WHERE is_cancelled = 1
+        GROUP BY item_code
+        ORDER BY cnt DESC
+    """, as_dict=1)
+
+    print(f"\nItems with cancelled SLE entries: {len(cancelled)}")
+    for item in cancelled[:20]:
+        print(f"  {item.item_code}: {item.cnt} entries")
+
+    # Combine all unique items
+    all_items = set()
+    for item in zero_val:
+        all_items.add(item.item_code)
+    for item in mismatched:
+        all_items.add(item.item_code)
+    for item in cancelled:
+        all_items.add(item.item_code)
+
+    print(f"\n{'='*70}")
+    print(f"Total unique items needing fix: {len(all_items)}")
+    print(f"{'='*70}\n")
+
+    return list(all_items)
+
+
 if __name__ == "__main__":
     import sys
 
@@ -981,29 +1301,45 @@ if __name__ == "__main__":
 Stock Valuation Correction Script
 =================================
 
-Usage:
-    1. Correct single item:
+RECOMMENDED - Complete Fix Functions:
+-------------------------------------
+    1. Fix single item (COMPLETE - all warehouses):
+       bench --site [sitename] execute expenses_management.scripts.recorrect_stock_valuation.fix_item_complete --args "['ITEM_CODE']"
+
+    2. Fix ALL items (COMPLETE):
+       bench --site [sitename] execute expenses_management.scripts.recorrect_stock_valuation.fix_all_items_complete
+
+    3. Check which items need fixing:
+       bench --site [sitename] execute expenses_management.scripts.recorrect_stock_valuation.get_items_needing_fix
+
+Legacy Functions:
+-----------------
+    4. Correct single item (specific warehouse):
        bench --site [sitename] execute expenses_management.scripts.recorrect_stock_valuation.correct_item_valuation --args "['ITEM_CODE', 'WAREHOUSE', 'FROM_DATE', dry_run]"
 
-    2. Correct all items in warehouse:
+    5. Correct all items in warehouse:
        bench --site [sitename] execute expenses_management.scripts.recorrect_stock_valuation.correct_warehouse_valuation --args "['WAREHOUSE', 'FROM_DATE', dry_run]"
 
-    3. Correct all items:
+    6. Correct all items:
        bench --site [sitename] execute expenses_management.scripts.recorrect_stock_valuation.correct_all_valuation --args "['FROM_DATE', dry_run]"
 
-    4. Process repost entries:
+    7. Process repost entries:
        bench --site [sitename] execute expenses_management.scripts.recorrect_stock_valuation.process_repost_entries
 
-    5. Check status:
+    8. Check status:
        bench --site [sitename] execute expenses_management.scripts.recorrect_stock_valuation.check_valuation_status --args "['ITEM_CODE', 'WAREHOUSE']"
 
 Examples:
-    # Dry run for item 20001
+=========
+    # Fix item 20001 completely (all warehouses)
+    bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.fix_item_complete --args "['20001']"
+
+    # Fix ALL items in the system
+    bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.fix_all_items_complete
+
+    # Check which items need fixing first
+    bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.get_items_needing_fix
+
+    # Dry run for item 20001 (legacy)
     bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.correct_item_valuation --args "['20001', 'مستودع الصناعية  - م', '2025-05-01', True]"
-
-    # Actually correct item 20001
-    bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.correct_item_valuation --args "['20001', 'مستودع الصناعية  - م', '2025-05-01', False]"
-
-    # Correct entire warehouse
-    bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.correct_warehouse_valuation --args "['مستودع الصناعية  - م', '2025-05-01', False]"
 """)

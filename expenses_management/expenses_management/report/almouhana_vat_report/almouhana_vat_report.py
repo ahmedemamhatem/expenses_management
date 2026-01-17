@@ -17,6 +17,16 @@ def get_descendants_of(company):
     return [company]
 
 
+def get_tax_accounts(company):
+    """Get all accounts with account_type = 'Tax' for a company"""
+    return frappe.db.sql_list("""
+        SELECT name FROM `tabAccount`
+        WHERE company = %s
+        AND account_type = 'Tax'
+        AND is_group = 0
+    """, company)
+
+
 def execute(filters=None):
     columns = get_columns()
     data = []
@@ -42,13 +52,13 @@ def execute(filters=None):
 
 
 def generate_single_company_report(filters):
-    """Generate report for a single company - ZATCA compliant"""
+    """Generate report for a single company - matching GL entries"""
     data = []
 
     # -----------------------------
     # 1. SALES VAT (OUTPUT VAT)
     # -----------------------------
-    sales_totals = get_sales_vat_totals_sql(filters)
+    sales_totals = get_sales_vat_totals(filters)
 
     data.append({
         "category": "<b>المبيعات - ضريبة القيمة المضافة المستحقة (OUTPUT VAT)</b>",
@@ -125,7 +135,7 @@ def generate_single_company_report(filters):
     # -----------------------------
     # 2. PURCHASE VAT (INPUT VAT)
     # -----------------------------
-    purchase_totals = get_purchase_vat_totals_sql(filters)
+    purchase_totals = get_purchase_vat_totals(filters)
 
     data.append({
         "category": "",
@@ -211,7 +221,7 @@ def generate_single_company_report(filters):
     # -----------------------------
     # 3. EXPENSES VAT (Additional Input VAT)
     # -----------------------------
-    expenses_totals = get_expenses_vat_totals_sql(filters)
+    expenses_totals = get_expenses_vat_totals(filters)
 
     if expenses_totals["Standard"]["amount"] > 0 or expenses_totals["Standard"]["vat"] > 0:
         data.append({
@@ -246,7 +256,38 @@ def generate_single_company_report(filters):
         total_expenses_amount = 0
 
     # -----------------------------
-    # 4. VAT SUMMARY
+    # 4. JOURNAL ENTRY VAT
+    # -----------------------------
+    journal_vat = get_journal_entry_vat(filters)
+
+    if journal_vat["vat"] != 0:
+        data.append({
+            "category": "",
+            "amount": None, "vat_amount": None,
+            "returned_amount": None, "returned_vat": None, "net_vat": None
+        })
+        data.append({
+            "category": "<b>قيود يومية - ضريبة القيمة المضافة (JOURNAL ENTRY VAT)</b>",
+            "amount": None, "vat_amount": None,
+            "returned_amount": None, "returned_vat": None, "net_vat": None
+        })
+
+        data.append({
+            "category": "تسويات ضريبية / VAT Adjustments",
+            "amount": None,
+            "vat_amount": journal_vat["vat"],
+            "returned_amount": None,
+            "returned_vat": None,
+            "net_vat": journal_vat["vat"],
+        })
+
+        # Add journal VAT to input VAT (if positive, it's additional input VAT)
+        total_journal_vat = journal_vat["vat"]
+    else:
+        total_journal_vat = 0
+
+    # -----------------------------
+    # 5. VAT SUMMARY
     # -----------------------------
     data.append({
         "category": "",
@@ -269,12 +310,12 @@ def generate_single_company_report(filters):
         "net_vat": total_sales_net_vat,
     })
 
-    # Box 14: Total Input VAT (purchases + expenses)
-    total_input_vat = total_purchase_net_vat + total_expenses_vat
+    # Box 14: Total Input VAT (purchases + expenses + journal adjustments)
+    total_input_vat = total_purchase_net_vat + total_expenses_vat + total_journal_vat
     data.append({
         "category": "<b>14. إجمالي ضريبة القيمة المضافة القابلة للخصم / Total Input VAT</b>",
         "amount": None,
-        "vat_amount": total_purchase_vat + total_expenses_vat,
+        "vat_amount": total_purchase_vat + total_expenses_vat + total_journal_vat,
         "returned_amount": None,
         "returned_vat": total_purchase_returned_vat,
         "net_vat": total_input_vat,
@@ -320,6 +361,7 @@ def generate_consolidated_report(filters, companies):
         "sales": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0, "net_vat": 0},
         "purchases": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0, "net_vat": 0},
         "expenses": {"amount": 0, "vat": 0},
+        "journal": {"vat": 0},
     }
 
     # Process each company
@@ -331,9 +373,10 @@ def generate_consolidated_report(filters, companies):
         }
 
         # Get data for this company
-        sales_totals = get_sales_vat_totals_sql(company_filters)
-        purchase_totals = get_purchase_vat_totals_sql(company_filters)
-        expenses_totals = get_expenses_vat_totals_sql(company_filters)
+        sales_totals = get_sales_vat_totals(company_filters)
+        purchase_totals = get_purchase_vat_totals(company_filters)
+        expenses_totals = get_expenses_vat_totals(company_filters)
+        journal_vat = get_journal_entry_vat(company_filters)
 
         # Calculate company totals - only taxable categories for VAT
         company_sales_amount = sum(v["amount"] for v in sales_totals.values())
@@ -356,8 +399,11 @@ def generate_consolidated_report(filters, companies):
         company_expenses_vat = expenses_totals["Standard"]["vat"]
         company_expenses_amount = company_expenses_net + company_expenses_vat  # Gross amount including VAT
 
+        company_journal_vat = journal_vat["vat"]
+
         # Skip if company has no data
-        if (company_sales_amount == 0 and company_purchase_amount == 0 and company_expenses_net == 0):
+        if (company_sales_amount == 0 and company_purchase_amount == 0 and
+            company_expenses_net == 0 and company_journal_vat == 0):
             continue
 
         # Add company header
@@ -398,8 +444,19 @@ def generate_consolidated_report(filters, companies):
                 "net_vat": company_expenses_vat,
             })
 
+        # Journal Entry VAT (if any)
+        if company_journal_vat != 0:
+            data.append({
+                "category": "تسويات ضريبية / VAT Adjustments",
+                "amount": None,
+                "vat_amount": company_journal_vat,
+                "returned_amount": None,
+                "returned_vat": None,
+                "net_vat": company_journal_vat,
+            })
+
         # Company Net VAT
-        company_net_vat = company_sales_net_vat - company_purchase_net_vat - company_expenses_vat
+        company_net_vat = company_sales_net_vat - company_purchase_net_vat - company_expenses_vat - company_journal_vat
         data.append({
             "category": "<b>صافي الضريبة المستحقة / Net VAT Due</b>",
             "amount": None,
@@ -424,6 +481,8 @@ def generate_consolidated_report(filters, companies):
 
         grand_totals["expenses"]["amount"] += company_expenses_amount
         grand_totals["expenses"]["vat"] += company_expenses_vat
+
+        grand_totals["journal"]["vat"] += company_journal_vat
 
         # Empty row between companies
         data.append({
@@ -472,8 +531,21 @@ def generate_consolidated_report(filters, companies):
             "net_vat": grand_totals["expenses"]["vat"],
         })
 
+    if grand_totals["journal"]["vat"] != 0:
+        data.append({
+            "category": "<b>إجمالي التسويات الضريبية / Total VAT Adjustments</b>",
+            "amount": None,
+            "vat_amount": grand_totals["journal"]["vat"],
+            "returned_amount": None,
+            "returned_vat": None,
+            "net_vat": grand_totals["journal"]["vat"],
+        })
+
     # Grand Net VAT Due
-    grand_net_vat = grand_totals["sales"]["net_vat"] - grand_totals["purchases"]["net_vat"] - grand_totals["expenses"]["vat"]
+    grand_net_vat = (grand_totals["sales"]["net_vat"] -
+                     grand_totals["purchases"]["net_vat"] -
+                     grand_totals["expenses"]["vat"] -
+                     grand_totals["journal"]["vat"])
     data.append({
         "category": "",
         "amount": None, "vat_amount": None,
@@ -503,63 +575,45 @@ def generate_consolidated_report(filters, companies):
 
 
 # -----------------------------
-# SQL HELPERS
+# VAT CALCULATION FUNCTIONS
 # -----------------------------
-def build_filters_sql(filters, table_alias="si"):
-    conditions = [f"{table_alias}.docstatus = 1"]
-    if filters:
-        if filters.get("company"):
-            # Check if it's a group company and get all descendants
-            is_group = frappe.db.get_value("Company", filters.get("company"), "is_group")
-            if is_group:
-                companies = get_descendants_of(filters.get("company"))
-                if companies:
-                    company_list = ", ".join([f"'{c}'" for c in companies])
-                    conditions.append(f"{table_alias}.company IN ({company_list})")
-            else:
-                conditions.append(f"{table_alias}.company = %(company)s")
-        if filters.get("from_date") and filters.get("to_date"):
-            conditions.append(f"{table_alias}.posting_date BETWEEN %(from_date)s AND %(to_date)s")
-        elif filters.get("from_date"):
-            conditions.append(f"{table_alias}.posting_date >= %(from_date)s")
-        elif filters.get("to_date"):
-            conditions.append(f"{table_alias}.posting_date <= %(to_date)s")
-    return " AND ".join(conditions)
+
+def build_company_condition(filters, table_alias="si"):
+    """Build company filter condition"""
+    if not filters or not filters.get("company"):
+        return ""
+
+    is_group = frappe.db.get_value("Company", filters.get("company"), "is_group")
+    if is_group:
+        companies = get_descendants_of(filters.get("company"))
+        if companies:
+            company_list = ", ".join([f"'{c}'" for c in companies])
+            return f"{table_alias}.company IN ({company_list})"
+    return f"{table_alias}.company = %(company)s"
 
 
-def get_zatca_category_from_template(zatca_cat_value):
+def build_date_condition(filters, table_alias="si"):
+    """Build date filter condition"""
+    if not filters:
+        return ""
+
+    conditions = []
+    if filters.get("from_date") and filters.get("to_date"):
+        conditions.append(f"{table_alias}.posting_date BETWEEN %(from_date)s AND %(to_date)s")
+    elif filters.get("from_date"):
+        conditions.append(f"{table_alias}.posting_date >= %(from_date)s")
+    elif filters.get("to_date"):
+        conditions.append(f"{table_alias}.posting_date <= %(to_date)s")
+
+    return " AND ".join(conditions) if conditions else ""
+
+
+def get_sales_vat_totals(filters):
     """
-    Parse the custom_zatca_category value from Tax Category
-    Examples:
-    - "Standard rate" -> "Standard"
-    - "Zero rated goods || Export of goods" -> "Zero Rated"
-    - "Exempted" -> "Exempted"
-    """
-    if not zatca_cat_value:
-        return None
-
-    zatca_lower = zatca_cat_value.lower()
-
-    if "zero" in zatca_lower:
-        return "Zero Rated"
-    elif "standard" in zatca_lower:
-        return "Standard"
-    elif "exempt" in zatca_lower:
-        return "Exempted"
-
-    return None
-
-
-# -----------------------------
-# SALES VAT
-# -----------------------------
-def get_sales_vat_totals_sql(filters):
-    """
-    Get sales VAT totals.
-    - Amount = gross amount (including VAT) = base_grand_total
-    - VAT = tax amount = base_total_taxes_and_charges
-    - SAR invoices with 0 VAT = skip (ignore)
-    - Non-SAR invoices with 0 VAT = Exports (Box 4)
+    Get sales VAT totals from Sales Taxes and Charges table.
+    Only includes rows where account_head has account_type = 'Tax'.
+    - Amount = base_net_total (net amount excluding VAT)
+    - VAT = sum of base_tax_amount from Tax account rows only
     """
     totals = {
         "Standard": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
@@ -569,26 +623,38 @@ def get_sales_vat_totals_sql(filters):
         "Exempt": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
     }
 
-    where_clause = build_filters_sql(filters)
+    # Build conditions
+    conditions = ["si.docstatus = 1"]
 
-    # Join with Sales Taxes and Charges Template -> Tax Category to get custom_zatca_category
+    company_cond = build_company_condition(filters, "si")
+    if company_cond:
+        conditions.append(company_cond)
+
+    date_cond = build_date_condition(filters, "si")
+    if date_cond:
+        conditions.append(date_cond)
+
+    where_clause = " AND ".join(conditions)
+
+    # Get invoices with VAT from taxes table (only Tax account type rows)
     query = f"""
         SELECT
             si.name AS invoice,
-            si.is_return AS is_return,
-            si.is_debit_note,
-            si.base_grand_total AS grand_total,
-            si.base_total_taxes_and_charges AS total_taxes_and_charges,
-            si.taxes_and_charges AS taxes_and_charges_template,
-            si.custom_zatca_tax_category AS invoice_zatca_cat,
-            si.custom_exemption_reason_code AS invoice_exemption_code,
-            si.custom_zatca_export_invoice AS invoice_export_flag,
-            si.currency AS currency,
-            stct.tax_category AS template_tax_category,
-            tc.custom_zatca_category AS template_zatca_category
+            si.is_return,
+            si.currency,
+            si.custom_zatca_export_invoice,
+            si.base_net_total AS net_amount,
+            COALESCE(vat.vat_amount, 0) AS vat_amount
         FROM `tabSales Invoice` si
-        LEFT JOIN `tabSales Taxes and Charges Template` stct ON stct.name = si.taxes_and_charges
-        LEFT JOIN `tabTax Category` tc ON tc.name = stct.tax_category
+        LEFT JOIN (
+            SELECT
+                stc.parent,
+                SUM(stc.base_tax_amount) AS vat_amount
+            FROM `tabSales Taxes and Charges` stc
+            INNER JOIN `tabAccount` acc ON acc.name = stc.account_head
+            WHERE acc.account_type = 'Tax'
+            GROUP BY stc.parent
+        ) vat ON vat.parent = si.name
         WHERE {where_clause}
     """
 
@@ -596,14 +662,10 @@ def get_sales_vat_totals_sql(filters):
 
     for r in rows:
         is_return = bool(r.get("is_return"))
-
-        # Amount = gross amount (including VAT)
-        gross_amount = abs(r.get("grand_total") or 0)
-        vat_amount = abs(r.get("total_taxes_and_charges") or 0)
+        net_amount = abs(r.get("net_amount") or 0)
+        vat_amount = abs(r.get("vat_amount") or 0)
         currency = r.get("currency") or "SAR"
-
-        # Get ZATCA category from Tax Template -> Tax Category
-        template_zatca_cat = get_zatca_category_from_template(r.get("template_zatca_category"))
+        is_export = int(r.get("custom_zatca_export_invoice") or 0) == 1
 
         # Determine which fields to update
         if is_return:
@@ -613,44 +675,29 @@ def get_sales_vat_totals_sql(filters):
             amount_key = "amount"
             vat_key = "vat"
 
-        # Check if it's an export first (exports are zero-rated, no VAT)
-        if int(r.get("custom_zatca_export_invoice") or 0) == 1:
-            totals["Exports"][amount_key] += gross_amount
-            continue
-
-        # Priority: Tax Template's Tax Category ZATCA category > Invoice ZATCA category
-        effective_zatca_cat = template_zatca_cat or r.get("invoice_zatca_cat")
-
-        # Skip SAR invoices with 0 VAT - they should not be included in the report
-        if currency == "SAR" and vat_amount == 0 and gross_amount > 0:
-            continue
-
-        # Non-SAR invoices with 0 VAT go to Exports (Box 4)
-        if currency != "SAR" and vat_amount == 0 and gross_amount > 0:
-            totals["Exports"][amount_key] += gross_amount
-            continue
-
-        # --- Standard Rated (has VAT) ---
-        if vat_amount > 0:
-            totals["Standard"][amount_key] += gross_amount
+        # Categorize the invoice
+        if is_export:
+            totals["Exports"][amount_key] += net_amount
+        elif currency != "SAR" and vat_amount == 0:
+            # Non-SAR with no VAT = Export
+            totals["Exports"][amount_key] += net_amount
+        elif vat_amount > 0:
+            # Standard rated (has VAT)
+            totals["Standard"][amount_key] += net_amount
             totals["Standard"][vat_key] += vat_amount
-        # --- Exempted ---
-        elif effective_zatca_cat == "Exempted":
-            totals["Exempt"][amount_key] += gross_amount
+        elif currency == "SAR" and vat_amount == 0 and net_amount > 0:
+            # SAR with no VAT - skip (not included in report)
+            pass
 
     return totals
 
 
-# -----------------------------
-# PURCHASE VAT
-# -----------------------------
-def get_purchase_vat_totals_sql(filters):
+def get_purchase_vat_totals(filters):
     """
-    Get purchase VAT totals.
-    - Amount = gross amount (including VAT) = base_grand_total
-    - VAT = tax amount = base_total_taxes_and_charges
-    - SAR invoices with 0 VAT = skip (ignore)
-    - Non-SAR invoices = Imports Reverse Charge (Box 9)
+    Get purchase VAT totals from Purchase Taxes and Charges table.
+    Only includes rows where account_head has account_type = 'Tax'.
+    - Amount = base_net_total (net amount excluding VAT)
+    - VAT = sum of base_tax_amount from Tax account rows only
     """
     totals = {
         "Standard": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
@@ -660,25 +707,38 @@ def get_purchase_vat_totals_sql(filters):
         "Exempt": {"amount": 0, "vat": 0, "returned_amount": 0, "returned_vat": 0},
     }
 
-    where_clause = build_filters_sql(filters, table_alias="pi")
+    # Build conditions
+    conditions = ["pi.docstatus = 1"]
 
-    # Join with Purchase Taxes and Charges Template -> Tax Category to get custom_zatca_category
+    company_cond = build_company_condition(filters, "pi")
+    if company_cond:
+        conditions.append(company_cond)
+
+    date_cond = build_date_condition(filters, "pi")
+    if date_cond:
+        conditions.append(date_cond)
+
+    where_clause = " AND ".join(conditions)
+
+    # Get invoices with VAT from taxes table (only Tax account type rows)
     query = f"""
         SELECT
             pi.name AS invoice,
-            pi.is_return AS is_return,
-            pi.base_grand_total AS grand_total,
-            pi.base_total_taxes_and_charges AS total_taxes_and_charges,
-            pi.taxes_and_charges AS taxes_and_charges_template,
-            pi.custom_zatca_tax_category,
-            pi.custom_exemption_reason_code,
+            pi.is_return,
+            pi.currency,
             pi.custom_zatca_import_invoice,
-            pi.currency AS currency,
-            ptct.tax_category AS template_tax_category,
-            tc.custom_zatca_category AS template_zatca_category
+            pi.base_net_total AS net_amount,
+            COALESCE(vat.vat_amount, 0) AS vat_amount
         FROM `tabPurchase Invoice` pi
-        LEFT JOIN `tabPurchase Taxes and Charges Template` ptct ON ptct.name = pi.taxes_and_charges
-        LEFT JOIN `tabTax Category` tc ON tc.name = ptct.tax_category
+        LEFT JOIN (
+            SELECT
+                ptc.parent,
+                SUM(ptc.base_tax_amount) AS vat_amount
+            FROM `tabPurchase Taxes and Charges` ptc
+            INNER JOIN `tabAccount` acc ON acc.name = ptc.account_head
+            WHERE acc.account_type = 'Tax'
+            GROUP BY ptc.parent
+        ) vat ON vat.parent = pi.name
         WHERE {where_clause}
     """
 
@@ -686,15 +746,12 @@ def get_purchase_vat_totals_sql(filters):
 
     for r in rows:
         is_return = bool(r.get("is_return"))
-
-        # Amount = gross amount (including VAT)
-        gross_amount = abs(r.get("grand_total") or 0)
-        vat_amount = abs(r.get("total_taxes_and_charges") or 0)
+        net_amount = abs(r.get("net_amount") or 0)
+        vat_amount = abs(r.get("vat_amount") or 0)
         currency = r.get("currency") or "SAR"
+        is_import = int(r.get("custom_zatca_import_invoice") or 0) == 1
 
-        # Get ZATCA category from Tax Template -> Tax Category
-        template_zatca_cat = get_zatca_category_from_template(r.get("template_zatca_category"))
-
+        # Determine which fields to update
         if is_return:
             amount_key = "returned_amount"
             vat_key = "returned_vat"
@@ -702,73 +759,71 @@ def get_purchase_vat_totals_sql(filters):
             amount_key = "amount"
             vat_key = "vat"
 
-        # Check if it's an import invoice (VAT paid at customs)
-        is_import = int(r.get("custom_zatca_import_invoice") or 0) == 1
-
+        # Categorize the invoice
         if is_import:
             # Import invoice - VAT paid at customs
-            totals["ImportsCustoms"][amount_key] += gross_amount
+            totals["ImportsCustoms"][amount_key] += net_amount
             totals["ImportsCustoms"][vat_key] += vat_amount
-            continue
-
-        # Skip SAR purchases with 0 VAT - they should not be included in the report
-        if currency == "SAR" and vat_amount == 0 and gross_amount > 0:
-            continue
-
-        # Non-SAR purchases go to Imports Reverse Charge (Box 9)
-        if currency != "SAR":
-            totals["ImportsReverseCharge"][amount_key] += gross_amount
+        elif currency != "SAR":
+            # Non-SAR = Imports Reverse Charge
+            totals["ImportsReverseCharge"][amount_key] += net_amount
             totals["ImportsReverseCharge"][vat_key] += vat_amount
-            continue
-
-        # SAR purchases with VAT go to Standard (Box 7)
-        if vat_amount > 0:
-            totals["Standard"][amount_key] += gross_amount
+        elif vat_amount > 0:
+            # Standard rated (has VAT)
+            totals["Standard"][amount_key] += net_amount
             totals["Standard"][vat_key] += vat_amount
+        elif currency == "SAR" and vat_amount == 0 and net_amount > 0:
+            # SAR with no VAT - skip (not included in report)
+            pass
 
     return totals
 
 
-# -----------------------------
-# EXPENSES VAT
-# -----------------------------
-def get_expenses_vat_totals_sql(filters):
-    """Get VAT totals from Expense Entry documents"""
+def get_expenses_vat_totals(filters):
+    """
+    Get expense VAT totals from GL entries for Expense Entry vouchers.
+    Uses GL entries because Expense Entry may not have a taxes child table.
+    Only includes accounts with account_type = 'Tax'.
+    """
     totals = {
         "Standard": {"amount": 0, "vat": 0},
         "Zero Rated": {"amount": 0, "vat": 0},
     }
 
-    conditions = ["ee.docstatus = 1"]
+    # Build conditions for GL query
+    conditions = ["gl.is_cancelled = 0", "gl.voucher_type = 'Expense Entry'"]
 
     if filters:
         if filters.get("company"):
-            # Check if it's a group company and get all descendants
             is_group = frappe.db.get_value("Company", filters.get("company"), "is_group")
             if is_group:
                 companies = get_descendants_of(filters.get("company"))
                 if companies:
                     company_list = ", ".join([f"'{c}'" for c in companies])
-                    conditions.append(f"ee.company IN ({company_list})")
+                    conditions.append(f"gl.company IN ({company_list})")
             else:
-                conditions.append("ee.company = %(company)s")
+                conditions.append("gl.company = %(company)s")
+
         if filters.get("from_date") and filters.get("to_date"):
-            conditions.append("ee.posting_date BETWEEN %(from_date)s AND %(to_date)s")
+            conditions.append("gl.posting_date BETWEEN %(from_date)s AND %(to_date)s")
         elif filters.get("from_date"):
-            conditions.append("ee.posting_date >= %(from_date)s")
+            conditions.append("gl.posting_date >= %(from_date)s")
         elif filters.get("to_date"):
-            conditions.append("ee.posting_date <= %(to_date)s")
+            conditions.append("gl.posting_date <= %(to_date)s")
 
     where_clause = " AND ".join(conditions)
 
+    # Get VAT amounts from GL entries for Expense Entries (only Tax account type)
     query = f"""
         SELECT
-            ee.name AS expense_entry,
-            ee.total_amount_before_tax AS net_amount,
-            ee.total_tax_amount AS vat_amount,
-            ee.total_amount AS gross_amount
-        FROM `tabExpense Entry` ee
+            gl.voucher_no,
+            ee.total_amount_before_tax as net_amount,
+            SUM(CASE WHEN acc.account_type = 'Tax' THEN gl.debit - gl.credit ELSE 0 END) as vat_amount
+        FROM `tabGL Entry` gl
+        JOIN `tabExpense Entry` ee ON ee.name = gl.voucher_no
+        LEFT JOIN `tabAccount` acc ON acc.name = gl.account
         WHERE {where_clause}
+        GROUP BY gl.voucher_no, ee.total_amount_before_tax
     """
 
     rows = frappe.db.sql(query, filters, as_dict=True)
@@ -778,14 +833,59 @@ def get_expenses_vat_totals_sql(filters):
         vat_amount = abs(r.get("vat_amount") or 0)
 
         if vat_amount > 0:
-            # Has VAT - Standard rated
             totals["Standard"]["amount"] += net_amount
             totals["Standard"]["vat"] += vat_amount
         else:
-            # No VAT - Zero rated
             totals["Zero Rated"]["amount"] += net_amount
 
     return totals
+
+
+def get_journal_entry_vat(filters):
+    """
+    Get VAT amounts from Journal Entry GL entries.
+    Returns net VAT (debit - credit) for accounts with account_type = 'Tax'.
+    Positive = Input VAT (deductible), Negative = Output VAT adjustment
+    """
+    result = {"vat": 0}
+
+    # Build conditions
+    conditions = ["gl.is_cancelled = 0", "gl.voucher_type = 'Journal Entry'", "acc.account_type = 'Tax'"]
+
+    if filters:
+        if filters.get("company"):
+            is_group = frappe.db.get_value("Company", filters.get("company"), "is_group")
+            if is_group:
+                companies = get_descendants_of(filters.get("company"))
+                if companies:
+                    company_list = ", ".join([f"'{c}'" for c in companies])
+                    conditions.append(f"gl.company IN ({company_list})")
+            else:
+                conditions.append("gl.company = %(company)s")
+
+        if filters.get("from_date") and filters.get("to_date"):
+            conditions.append("gl.posting_date BETWEEN %(from_date)s AND %(to_date)s")
+        elif filters.get("from_date"):
+            conditions.append("gl.posting_date >= %(from_date)s")
+        elif filters.get("to_date"):
+            conditions.append("gl.posting_date <= %(to_date)s")
+
+    where_clause = " AND ".join(conditions)
+
+    query = f"""
+        SELECT
+            SUM(gl.debit - gl.credit) as net_vat
+        FROM `tabGL Entry` gl
+        INNER JOIN `tabAccount` acc ON acc.name = gl.account
+        WHERE {where_clause}
+    """
+
+    row = frappe.db.sql(query, filters, as_dict=True)
+
+    if row and row[0].get("net_vat"):
+        result["vat"] = row[0].get("net_vat")
+
+    return result
 
 
 # -----------------------------
