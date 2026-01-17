@@ -201,6 +201,7 @@ class ExpenseEntry(Document):
 			"is_opening": "No",
 			"party_type": None,
 			"party": None,
+			"branch": self.branch if hasattr(self, "branch") else None,
 		})
 		gl_dict.update(args)
 		return gl_dict
