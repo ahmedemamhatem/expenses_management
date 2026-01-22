@@ -1294,6 +1294,704 @@ def get_items_needing_fix():
     return list(all_items)
 
 
+def rebuild_item_valuation(item_code, dry_run=False):
+    """
+    Complete rebuild of Moving Average valuation for an item.
+    This recalculates valuation from scratch based on actual transactions.
+
+    Steps:
+    1. Get all SLE entries in chronological order
+    2. Recalculate Moving Average for each transaction
+    3. Update SLE with correct valuation_rate, stock_value, incoming_rate
+    4. Update related documents (DN, SI, SE items)
+    5. Rebuild GL entries
+
+    Usage:
+        bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.rebuild_item_valuation --args "['20001']"
+        bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.rebuild_item_valuation --args "['20001', True]"  # Dry run
+    """
+    from frappe.utils import flt
+
+    print(f"\n{'='*80}")
+    print(f"REBUILD MOVING AVERAGE VALUATION FOR ITEM: {item_code}")
+    print(f"Dry Run: {dry_run}")
+    print(f"{'='*80}")
+
+    # Disable accounting freeze temporarily
+    acc_settings = frappe.get_single("Accounts Settings")
+    old_freeze_date = acc_settings.acc_frozen_upto
+    if old_freeze_date and not dry_run:
+        print(f"\n[Step 0] Temporarily disabling accounting freeze (was: {old_freeze_date})")
+        frappe.db.set_single_value("Accounts Settings", "acc_frozen_upto", None)
+        frappe.db.commit()
+
+    # Get all warehouses for this item
+    warehouses = frappe.db.sql_list("""
+        SELECT DISTINCT warehouse
+        FROM `tabStock Ledger Entry`
+        WHERE item_code = %s
+        ORDER BY warehouse
+    """, item_code)
+
+    print(f"\n[Step 1] Found {len(warehouses)} warehouses for item {item_code}")
+
+    total_sle_updated = 0
+    total_docs_updated = 0
+
+    for warehouse in warehouses:
+        print(f"\n{'='*60}")
+        print(f"Processing Warehouse: {warehouse}")
+        print(f"{'='*60}")
+
+        # Get all SLE entries for this item+warehouse in chronological order
+        sles = frappe.db.sql("""
+            SELECT
+                name, posting_date, posting_time, posting_datetime,
+                voucher_type, voucher_no, voucher_detail_no,
+                actual_qty, incoming_rate, valuation_rate,
+                qty_after_transaction, stock_value, stock_value_difference
+            FROM `tabStock Ledger Entry`
+            WHERE item_code = %s AND warehouse = %s
+            ORDER BY posting_datetime, creation
+        """, (item_code, warehouse), as_dict=1)
+
+        print(f"  Found {len(sles)} SLE entries")
+
+        if not sles:
+            continue
+
+        # Initialize running totals for Moving Average calculation
+        running_qty = 0.0
+        running_value = 0.0
+        current_valuation_rate = 0.0
+
+        sle_updates = []
+
+        for sle in sles:
+            qty = flt(sle.actual_qty, 6)
+            old_valuation_rate = flt(sle.valuation_rate, 6)
+            old_incoming_rate = flt(sle.incoming_rate, 6)
+
+            # Special handling for Stock Reconciliation with qty=0 (rate change only)
+            if sle.voucher_type == "Stock Reconciliation" and qty == 0:
+                # Get the valuation rate from Stock Reconciliation Item
+                recon_rate = frappe.db.get_value(
+                    "Stock Reconciliation Item",
+                    {"parent": sle.voucher_no, "item_code": item_code, "warehouse": warehouse},
+                    "valuation_rate"
+                ) or 0
+
+                if recon_rate > 0:
+                    # Update running values to new valuation rate (round to 2 decimals)
+                    current_valuation_rate = round(flt(recon_rate, 6), 2)
+                    if running_qty > 0:
+                        running_value = round(running_qty * current_valuation_rate, 2)
+
+                    sle_updates.append({
+                        'name': sle.name,
+                        'incoming_rate': current_valuation_rate,
+                        'valuation_rate': current_valuation_rate,
+                        'qty_after_transaction': running_qty,
+                        'stock_value': running_value,
+                        'stock_value_difference': 0,
+                        'old_valuation_rate': old_valuation_rate,
+                        'old_incoming_rate': old_incoming_rate,
+                        'voucher_type': sle.voucher_type,
+                        'voucher_no': sle.voucher_no
+                    })
+                    continue
+
+            if qty > 0:
+                # Incoming transaction - use the incoming_rate from the transaction
+                incoming_rate = flt(sle.incoming_rate, 6)
+
+                # For Stock Reconciliation, always use the rate from reconciliation document
+                if sle.voucher_type == "Stock Reconciliation":
+                    recon_rate = frappe.db.get_value(
+                        "Stock Reconciliation Item",
+                        {"parent": sle.voucher_no, "item_code": item_code, "warehouse": warehouse},
+                        "valuation_rate"
+                    ) or 0
+                    if recon_rate > 0:
+                        incoming_rate = round(flt(recon_rate, 6), 2)
+
+                if incoming_rate <= 0:
+                    # If no incoming rate, try to get from source document
+                    incoming_rate = get_incoming_rate_from_voucher(
+                        sle.voucher_type, sle.voucher_no, sle.voucher_detail_no, item_code, warehouse
+                    )
+
+                if incoming_rate <= 0:
+                    # Fall back to current valuation rate if still no rate
+                    incoming_rate = current_valuation_rate
+
+                # Calculate new Moving Average
+                new_qty = running_qty + qty
+                new_value = running_value + (qty * incoming_rate)
+
+                # Handle transition from negative to positive stock
+                # When stock was negative, use incoming_rate as the new valuation rate
+                if running_qty <= 0 and new_qty > 0:
+                    # Stock going from negative/zero to positive - use incoming rate
+                    new_valuation_rate = incoming_rate
+                elif new_qty > 0:
+                    new_valuation_rate = new_value / new_qty
+                else:
+                    new_valuation_rate = incoming_rate
+
+                # Round to 2 decimal places to avoid long decimals
+                new_valuation_rate = round(new_valuation_rate, 2)
+                incoming_rate = round(incoming_rate, 2)
+
+                # Safety cap - valuation rate should not be much higher than incoming rate
+                # This catches edge cases where formula produces unreasonably high rates
+                if incoming_rate > 0 and new_valuation_rate > incoming_rate * 3:
+                    new_valuation_rate = incoming_rate
+
+                # Safety cap for valuation rate to prevent database overflow
+                max_rate = 9999999999.0
+                if new_valuation_rate > max_rate:
+                    new_valuation_rate = incoming_rate if incoming_rate > 0 and incoming_rate < max_rate else current_valuation_rate
+                elif new_valuation_rate < 0:
+                    new_valuation_rate = incoming_rate if incoming_rate > 0 else current_valuation_rate
+
+                running_qty = new_qty
+                running_value = running_qty * new_valuation_rate  # Recalculate to avoid rounding drift
+                current_valuation_rate = new_valuation_rate
+
+                # Stock value difference for incoming
+                stock_value_diff = round(qty * incoming_rate, 2)
+
+                sle_updates.append({
+                    'name': sle.name,
+                    'incoming_rate': incoming_rate,
+                    'valuation_rate': new_valuation_rate,
+                    'qty_after_transaction': running_qty,
+                    'stock_value': running_value,
+                    'stock_value_difference': stock_value_diff,
+                    'old_valuation_rate': old_valuation_rate,
+                    'old_incoming_rate': old_incoming_rate,
+                    'voucher_type': sle.voucher_type,
+                    'voucher_no': sle.voucher_no
+                })
+
+            else:
+                # Outgoing transaction - use current valuation rate
+                outgoing_rate = round(current_valuation_rate, 2)
+
+                # For outgoing, incoming_rate should equal valuation_rate (COGS)
+                new_value = running_value + (qty * outgoing_rate)  # qty is negative
+                new_qty = running_qty + qty
+
+                # Handle negative stock scenario
+                if new_qty < 0:
+                    # Allow negative but keep valuation rate
+                    new_valuation_rate = current_valuation_rate
+                elif new_qty > 0:
+                    new_valuation_rate = new_value / new_qty
+                else:
+                    new_valuation_rate = current_valuation_rate
+
+                # Round to 2 decimal places
+                new_valuation_rate = round(new_valuation_rate, 2)
+
+                # Safety cap for valuation rate to prevent database overflow
+                max_rate = 9999999999.0
+                if new_valuation_rate > max_rate:
+                    new_valuation_rate = current_valuation_rate
+                elif new_valuation_rate < 0:
+                    new_valuation_rate = current_valuation_rate
+
+                running_qty = new_qty
+                if new_qty <= 0:
+                    running_value = 0
+                else:
+                    running_value = running_qty * new_valuation_rate
+
+                # Stock value difference for outgoing
+                stock_value_diff = round(qty * outgoing_rate, 2)  # This will be negative
+
+                sle_updates.append({
+                    'name': sle.name,
+                    'incoming_rate': outgoing_rate,  # For outgoing, incoming_rate = valuation_rate at time of transaction
+                    'valuation_rate': new_valuation_rate,
+                    'qty_after_transaction': running_qty,
+                    'stock_value': running_value,
+                    'stock_value_difference': stock_value_diff,
+                    'old_valuation_rate': old_valuation_rate,
+                    'old_incoming_rate': old_incoming_rate,
+                    'voucher_type': sle.voucher_type,
+                    'voucher_no': sle.voucher_no
+                })
+
+        # Apply updates
+        print(f"\n  Applying updates to {len(sle_updates)} SLE entries...")
+
+        changes_made = 0
+        for upd in sle_updates:
+            # Check if values changed
+            val_changed = abs(flt(upd['valuation_rate'], 4) - flt(upd['old_valuation_rate'], 4)) > 0.001
+            inc_changed = abs(flt(upd['incoming_rate'], 4) - flt(upd['old_incoming_rate'], 4)) > 0.001
+
+            if val_changed or inc_changed:
+                changes_made += 1
+                if not dry_run:
+                    frappe.db.sql("""
+                        UPDATE `tabStock Ledger Entry`
+                        SET
+                            incoming_rate = %s,
+                            valuation_rate = %s,
+                            qty_after_transaction = %s,
+                            stock_value = %s,
+                            stock_value_difference = %s
+                        WHERE name = %s
+                    """, (
+                        upd['incoming_rate'],
+                        upd['valuation_rate'],
+                        upd['qty_after_transaction'],
+                        upd['stock_value'],
+                        upd['stock_value_difference'],
+                        upd['name']
+                    ))
+
+        print(f"  SLE entries updated: {changes_made}")
+        total_sle_updated += changes_made
+
+        # Update Bin
+        if not dry_run and sle_updates:
+            last_sle = sle_updates[-1]
+            bin_name = frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": warehouse})
+            if bin_name:
+                frappe.db.set_value("Bin", bin_name, {
+                    "actual_qty": last_sle['qty_after_transaction'],
+                    "valuation_rate": last_sle['valuation_rate'],
+                    "stock_value": last_sle['stock_value']
+                }, update_modified=False)
+                print(f"  Bin updated: qty={last_sle['qty_after_transaction']}, rate={last_sle['valuation_rate']:.4f}")
+
+    # Step 2: Update related documents
+    print(f"\n[Step 2] Updating related documents...")
+
+    # Update Delivery Note Items
+    dn_updated = update_delivery_note_items(item_code, dry_run)
+    print(f"  Delivery Note Items updated: {dn_updated}")
+
+    # Update Sales Invoice Items
+    si_updated = update_sales_invoice_items(item_code, dry_run)
+    print(f"  Sales Invoice Items updated: {si_updated}")
+
+    # Update Stock Entry Details
+    se_updated = update_stock_entry_details(item_code, dry_run)
+    print(f"  Stock Entry Details updated: {se_updated}")
+
+    total_docs_updated = dn_updated + si_updated + se_updated
+
+    # Step 3: Rebuild GL entries
+    print(f"\n[Step 3] Rebuilding GL entries...")
+    if not dry_run:
+        gl_updated = rebuild_gl_entries_for_item(item_code)
+        print(f"  GL entries rebuilt for {gl_updated} vouchers")
+    else:
+        print(f"  [DRY RUN] Would rebuild GL entries")
+
+    # Commit changes
+    if not dry_run:
+        frappe.db.commit()
+
+    # Restore accounting freeze
+    if old_freeze_date and not dry_run:
+        print(f"\n[Step 4] Restoring accounting freeze to: {old_freeze_date}")
+        frappe.db.set_single_value("Accounts Settings", "acc_frozen_upto", old_freeze_date)
+        frappe.db.commit()
+
+    # Final summary
+    print(f"\n{'='*80}")
+    print(f"REBUILD COMPLETE FOR ITEM: {item_code}")
+    print(f"{'='*80}")
+    print(f"  SLE entries updated: {total_sle_updated}")
+    print(f"  Related documents updated: {total_docs_updated}")
+
+    # Verify final state
+    final_stats = frappe.db.sql("""
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN valuation_rate = 0 AND actual_qty > 0 THEN 1 ELSE 0 END) as zero_val,
+            SUM(CASE WHEN actual_qty < 0 AND ABS(incoming_rate - valuation_rate) > 0.01 THEN 1 ELSE 0 END) as mismatched
+        FROM `tabStock Ledger Entry`
+        WHERE item_code = %s
+    """, item_code, as_dict=1)[0]
+
+    print(f"\nFinal Stats:")
+    print(f"  Total SLE: {final_stats.total}")
+    print(f"  Zero valuation (incoming): {final_stats.zero_val}")
+    print(f"  Mismatched incoming_rate: {final_stats.mismatched}")
+    print(f"{'='*80}\n")
+
+    return {
+        "sle_updated": total_sle_updated,
+        "docs_updated": total_docs_updated,
+        "final_stats": final_stats
+    }
+
+
+def get_incoming_rate_from_voucher(voucher_type, voucher_no, voucher_detail_no, item_code, warehouse):
+    """Get the incoming rate from the source voucher document"""
+    from frappe.utils import flt
+
+    rate = 0
+
+    if voucher_type == "Purchase Receipt":
+        rate = frappe.db.get_value("Purchase Receipt Item", voucher_detail_no, "valuation_rate") or 0
+        if not rate:
+            rate = frappe.db.get_value("Purchase Receipt Item", voucher_detail_no, "rate") or 0
+
+    elif voucher_type == "Purchase Invoice":
+        rate = frappe.db.get_value("Purchase Invoice Item", voucher_detail_no, "valuation_rate") or 0
+        if not rate:
+            rate = frappe.db.get_value("Purchase Invoice Item", voucher_detail_no, "rate") or 0
+
+    elif voucher_type == "Stock Entry":
+        rate = frappe.db.get_value("Stock Entry Detail", voucher_detail_no, "valuation_rate") or 0
+        if not rate:
+            rate = frappe.db.get_value("Stock Entry Detail", voucher_detail_no, "basic_rate") or 0
+
+    elif voucher_type == "Stock Reconciliation":
+        rate = frappe.db.get_value("Stock Reconciliation Item", voucher_detail_no, "valuation_rate") or 0
+
+    return flt(rate, 6)
+
+
+def update_delivery_note_items(item_code, dry_run=False):
+    """Update incoming_rate on Delivery Note Items to match SLE valuation_rate"""
+    from frappe.utils import flt
+
+    # Get all DN items with their SLE valuation rates
+    dn_items = frappe.db.sql("""
+        SELECT
+            dni.name, dni.parent, dni.incoming_rate as current_rate,
+            sle.valuation_rate as correct_rate, sle.incoming_rate as sle_incoming
+        FROM `tabDelivery Note Item` dni
+        JOIN `tabDelivery Note` dn ON dn.name = dni.parent
+        JOIN `tabStock Ledger Entry` sle ON
+            sle.voucher_type = 'Delivery Note'
+            AND sle.voucher_no = dni.parent
+            AND sle.voucher_detail_no = dni.name
+        WHERE dni.item_code = %s
+        AND dn.docstatus = 1
+        AND ABS(dni.incoming_rate - sle.incoming_rate) > 0.01
+    """, item_code, as_dict=1)
+
+    updated = 0
+    for item in dn_items:
+        if not dry_run:
+            frappe.db.set_value("Delivery Note Item", item.name,
+                               "incoming_rate", item.sle_incoming, update_modified=False)
+        updated += 1
+
+    return updated
+
+
+def update_sales_invoice_items(item_code, dry_run=False):
+    """Update incoming_rate on Sales Invoice Items"""
+    from frappe.utils import flt
+
+    si_items = frappe.db.sql("""
+        SELECT
+            sii.name, sii.parent, sii.incoming_rate as current_rate,
+            sle.incoming_rate as correct_rate
+        FROM `tabSales Invoice Item` sii
+        JOIN `tabSales Invoice` si ON si.name = sii.parent
+        JOIN `tabStock Ledger Entry` sle ON
+            sle.voucher_type = 'Sales Invoice'
+            AND sle.voucher_no = sii.parent
+            AND sle.voucher_detail_no = sii.name
+        WHERE sii.item_code = %s
+        AND si.docstatus = 1
+        AND si.update_stock = 1
+        AND ABS(sii.incoming_rate - sle.incoming_rate) > 0.01
+    """, item_code, as_dict=1)
+
+    updated = 0
+    for item in si_items:
+        if not dry_run:
+            frappe.db.set_value("Sales Invoice Item", item.name,
+                               "incoming_rate", item.correct_rate, update_modified=False)
+        updated += 1
+
+    return updated
+
+
+def update_stock_entry_details(item_code, dry_run=False):
+    """Update valuation_rate on Stock Entry Details"""
+    from frappe.utils import flt
+
+    se_items = frappe.db.sql("""
+        SELECT
+            sed.name, sed.parent, sed.valuation_rate as current_rate,
+            sle.valuation_rate as correct_rate
+        FROM `tabStock Entry Detail` sed
+        JOIN `tabStock Entry` se ON se.name = sed.parent
+        JOIN `tabStock Ledger Entry` sle ON
+            sle.voucher_type = 'Stock Entry'
+            AND sle.voucher_no = sed.parent
+            AND sle.voucher_detail_no = sed.name
+        WHERE sed.item_code = %s
+        AND se.docstatus = 1
+        AND ABS(sed.valuation_rate - sle.valuation_rate) > 0.01
+    """, item_code, as_dict=1)
+
+    updated = 0
+    for item in se_items:
+        if not dry_run:
+            frappe.db.set_value("Stock Entry Detail", item.name,
+                               "valuation_rate", item.correct_rate, update_modified=False)
+        updated += 1
+
+    return updated
+
+
+def rebuild_gl_entries_for_item(item_code):
+    """Rebuild GL entries for all vouchers related to this item"""
+    from erpnext.stock.doctype.repost_item_valuation.repost_item_valuation import repost_gl_entries
+
+    # Get all vouchers for this item
+    vouchers = frappe.db.sql("""
+        SELECT DISTINCT voucher_type, voucher_no
+        FROM `tabStock Ledger Entry`
+        WHERE item_code = %s
+        ORDER BY posting_datetime
+    """, item_code, as_dict=1)
+
+    # Build set of affected transactions
+    affected = set()
+    for v in vouchers:
+        affected.add((v.voucher_type, v.voucher_no))
+
+    if affected:
+        try:
+            repost_gl_entries(list(affected))
+            return len(affected)
+        except Exception as e:
+            print(f"  Warning: GL repost failed: {e}")
+            return 0
+
+    return 0
+
+
+def rebuild_all_items_valuation(dry_run=False, batch_size=50):
+    """
+    Rebuild Moving Average valuation for ALL items.
+
+    Usage:
+        bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.rebuild_all_items_valuation
+        bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.rebuild_all_items_valuation --args "[True]"  # Dry run
+    """
+    print(f"\n{'='*80}")
+    print("REBUILD MOVING AVERAGE VALUATION FOR ALL ITEMS")
+    print(f"Dry Run: {dry_run}")
+    print(f"{'='*80}")
+
+    # Get all distinct items
+    items = frappe.db.sql_list("""
+        SELECT DISTINCT item_code
+        FROM `tabStock Ledger Entry`
+        ORDER BY item_code
+    """)
+
+    print(f"\nTotal items to process: {len(items)}")
+
+    total_sle = 0
+    total_docs = 0
+    errors = []
+
+    for i, item_code in enumerate(items, 1):
+        print(f"\n[{i}/{len(items)}] Processing {item_code}...")
+
+        try:
+            result = rebuild_item_valuation(item_code, dry_run)
+            total_sle += result.get("sle_updated", 0)
+            total_docs += result.get("docs_updated", 0)
+        except Exception as e:
+            print(f"  ERROR: {e}")
+            errors.append({"item": item_code, "error": str(e)})
+            frappe.db.rollback()
+
+        # Commit every batch
+        if not dry_run and i % batch_size == 0:
+            frappe.db.commit()
+            print(f"\n--- Committed batch {i}/{len(items)} ---")
+
+    if not dry_run:
+        frappe.db.commit()
+
+    # Final summary
+    print(f"\n{'='*80}")
+    print("FINAL SUMMARY")
+    print(f"{'='*80}")
+    print(f"Total items processed: {len(items)}")
+    print(f"Total SLE updated: {total_sle}")
+    print(f"Total documents updated: {total_docs}")
+    print(f"Errors: {len(errors)}")
+
+    if errors:
+        print("\nErrors:")
+        for e in errors[:20]:
+            print(f"  - {e['item']}: {e['error']}")
+
+    return {"items": len(items), "sle_updated": total_sle, "docs_updated": total_docs, "errors": errors}
+
+
+def fix_zero_valuation_items():
+    """
+    Fix items that have zero valuation because source documents have zero rate.
+    This function:
+    1. Finds items with zero valuation on incoming transactions
+    2. Looks for any valid purchase rate for the item
+    3. Updates the source documents and SLE with the valid rate
+    4. Rebuilds valuation for those items
+
+    Usage:
+        bench --site almouhana.local execute expenses_management.scripts.recorrect_stock_valuation.fix_zero_valuation_items
+    """
+    from frappe.utils import flt
+
+    print(f"\n{'='*80}")
+    print("FIX ZERO VALUATION ITEMS")
+    print(f"{'='*80}")
+
+    # Find items with zero valuation on incoming transactions
+    zero_val_items = frappe.db.sql("""
+        SELECT DISTINCT item_code
+        FROM `tabStock Ledger Entry`
+        WHERE valuation_rate = 0
+        AND actual_qty > 0
+        AND is_cancelled = 0
+    """, as_list=1)
+
+    zero_val_items = [x[0] for x in zero_val_items]
+    print(f"\nFound {len(zero_val_items)} items with zero valuation incoming entries")
+
+    fixed = 0
+    for item_code in zero_val_items:
+        print(f"\n{'='*60}")
+        print(f"Processing: {item_code}")
+        print(f"{'='*60}")
+
+        # Try to find a valid purchase rate for this item
+        valid_rate = frappe.db.sql("""
+            SELECT rate FROM (
+                SELECT pri.rate
+                FROM `tabPurchase Receipt Item` pri
+                JOIN `tabPurchase Receipt` pr ON pr.name = pri.parent
+                WHERE pri.item_code = %s AND pr.docstatus = 1 AND pri.rate > 0
+                UNION ALL
+                SELECT pii.rate
+                FROM `tabPurchase Invoice Item` pii
+                JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+                WHERE pii.item_code = %s AND pi.docstatus = 1 AND pii.rate > 0
+                UNION ALL
+                SELECT sed.basic_rate as rate
+                FROM `tabStock Entry Detail` sed
+                JOIN `tabStock Entry` se ON se.name = sed.parent
+                WHERE sed.item_code = %s AND se.docstatus = 1 AND sed.basic_rate > 0
+                UNION ALL
+                SELECT sri.valuation_rate as rate
+                FROM `tabStock Reconciliation Item` sri
+                JOIN `tabStock Reconciliation` sr ON sr.name = sri.parent
+                WHERE sri.item_code = %s AND sr.docstatus = 1 AND sri.valuation_rate > 0
+            ) rates
+            ORDER BY rate DESC
+            LIMIT 1
+        """, (item_code, item_code, item_code, item_code))
+
+        if not valid_rate or not valid_rate[0][0]:
+            print(f"  WARNING: No valid rate found for {item_code}. Skipping.")
+            continue
+
+        rate = flt(valid_rate[0][0], 6)
+        print(f"  Found valid rate: {rate}")
+
+        # Find and update zero-rate source documents
+        # Update Purchase Receipt Items
+        pr_updated = frappe.db.sql("""
+            UPDATE `tabPurchase Receipt Item` pri
+            JOIN `tabPurchase Receipt` pr ON pr.name = pri.parent
+            SET pri.rate = %s, pri.valuation_rate = %s, pri.amount = pri.qty * %s
+            WHERE pri.item_code = %s
+            AND pr.docstatus = 1
+            AND pri.rate = 0
+        """, (rate, rate, rate, item_code))
+        pr_count = frappe.db.sql("SELECT ROW_COUNT()")[0][0]
+        print(f"  Purchase Receipt Items updated: {pr_count}")
+
+        # Update Purchase Invoice Items
+        pi_updated = frappe.db.sql("""
+            UPDATE `tabPurchase Invoice Item` pii
+            JOIN `tabPurchase Invoice` pi ON pi.name = pii.parent
+            SET pii.rate = %s, pii.valuation_rate = %s, pii.amount = pii.qty * %s
+            WHERE pii.item_code = %s
+            AND pi.docstatus = 1
+            AND pii.rate = 0
+        """, (rate, rate, rate, item_code))
+        pi_count = frappe.db.sql("SELECT ROW_COUNT()")[0][0]
+        print(f"  Purchase Invoice Items updated: {pi_count}")
+
+        # Update Stock Entry Details
+        se_updated = frappe.db.sql("""
+            UPDATE `tabStock Entry Detail` sed
+            JOIN `tabStock Entry` se ON se.name = sed.parent
+            SET sed.basic_rate = %s, sed.valuation_rate = %s, sed.amount = sed.qty * %s
+            WHERE sed.item_code = %s
+            AND se.docstatus = 1
+            AND sed.basic_rate = 0
+            AND sed.t_warehouse IS NOT NULL
+        """, (rate, rate, rate, item_code))
+        se_count = frappe.db.sql("SELECT ROW_COUNT()")[0][0]
+        print(f"  Stock Entry Details updated: {se_count}")
+
+        # Update zero-rate SLE entries directly
+        sle_updated = frappe.db.sql("""
+            UPDATE `tabStock Ledger Entry`
+            SET incoming_rate = %s
+            WHERE item_code = %s
+            AND actual_qty > 0
+            AND incoming_rate = 0
+            AND is_cancelled = 0
+        """, (rate, item_code))
+        sle_count = frappe.db.sql("SELECT ROW_COUNT()")[0][0]
+        print(f"  SLE incoming_rate updated: {sle_count}")
+
+        frappe.db.commit()
+
+        # Now rebuild valuation for this item
+        print(f"\n  Rebuilding valuation...")
+        try:
+            rebuild_item_valuation(item_code, dry_run=False)
+            fixed += 1
+        except Exception as e:
+            print(f"  ERROR rebuilding: {e}")
+            frappe.db.rollback()
+
+    frappe.db.commit()
+
+    print(f"\n{'='*80}")
+    print(f"COMPLETE: Fixed {fixed}/{len(zero_val_items)} items with zero valuation")
+    print(f"{'='*80}\n")
+
+    # Verify final state
+    remaining = frappe.db.sql("""
+        SELECT COUNT(DISTINCT item_code)
+        FROM `tabStock Ledger Entry`
+        WHERE valuation_rate = 0
+        AND actual_qty > 0
+        AND is_cancelled = 0
+    """)[0][0]
+
+    print(f"Remaining items with zero valuation: {remaining}")
+
+    return {"fixed": fixed, "remaining": remaining}
+
+
 if __name__ == "__main__":
     import sys
 

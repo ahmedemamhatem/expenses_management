@@ -759,12 +759,20 @@ class CustomerAnalysisReport {
 				.weight-cell { font-weight: 900; color: #7c3aed; font-size: 18px; }
 				.amount-cell { font-weight: 900; color: #1e293b; font-size: 18px; }
 				.cost-cell { font-weight: 900; color: #dc2626; font-size: 18px; }
-				.stock-cell { display: flex; align-items: center; justify-content: center; gap: 10px; }
-				.stock-dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 3px 8px rgba(0,0,0,0.2); animation: pulse 2s ease-in-out infinite; }
+				.stock-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+				.stock-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; background: rgba(0,0,0,0.03); }
+				.stock-row.warehouse-row { background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(99, 102, 241, 0.05)); }
+				.stock-row.city-row { background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05)); }
+				.stock-dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
 				.stock-dot.hi { background: linear-gradient(135deg, #10b981, #059669); }
 				.stock-dot.md { background: linear-gradient(135deg, #f59e0b, #d97706); }
 				.stock-dot.lo { background: linear-gradient(135deg, #ef4444, #dc2626); }
-				.stock-val { font-weight: 900; color: #1e293b; font-size: 18px; }
+				.stock-label { font-size: 10px; font-weight: 700; color: #64748b; }
+				.stock-row.warehouse-row .stock-label { color: #6366f1; }
+				.stock-row.city-row .stock-label { color: #059669; }
+				.stock-val { font-weight: 900; color: #1e293b; font-size: 14px; }
+				.stock-row.warehouse-row .stock-val { color: #4f46e5; }
+				.stock-row.city-row .stock-val { color: #047857; }
 				.val-pos { color: #059669 !important; font-weight: 900; }
 				.val-neg { color: #dc2626 !important; font-weight: 900; }
 				.branch-user-cell { display: flex; flex-direction: column; gap: 5px; align-items: center; }
@@ -1158,7 +1166,9 @@ class CustomerAnalysisReport {
 		if (!items || items.length === 0) return `<div class="empty-box" style="padding:30px;"><p>لا توجد أصناف</p></div>`;
 
 		let rows = items.map(i => {
-			const stk = (i.current_stock || 0) > 100 ? 'hi' : ((i.current_stock || 0) > 20 ? 'md' : 'lo');
+			// Stock level indicators for warehouse and city
+			const whStk = (i.warehouse_stock || 0) > 100 ? 'hi' : ((i.warehouse_stock || 0) > 20 ? 'md' : 'lo');
+			const cityStk = (i.city_stock || 0) > 100 ? 'hi' : ((i.city_stock || 0) > 20 ? 'md' : 'lo');
 			const revCls = (i.revenue || 0) >= 0 ? 'val-pos' : 'val-neg';
 			const invoiceRate = i.total_amount && i.qty ? (i.total_amount / i.qty) : 0;
 			const profitPct = i.total_amount && i.total_amount > 0 ? ((i.revenue || 0) / i.total_amount * 100) : 0;
@@ -1175,7 +1185,20 @@ class CustomerAnalysisReport {
 					<td class="amount-cell">${this.fmt(i.total_amount)}</td>
 					<td class="cost-cell">${this.fmt(i.cost_of_goods)}</td>
 					<td><div class="profit-cell"><span class="${revCls}">${this.fmt(i.revenue)}</span><span class="profit-pct ${profitPctCls}">${this.num(profitPct, 1)}%</span></div></td>
-					<td><div class="stock-cell"><span class="stock-dot ${stk}"></span><span class="stock-val">${this.num(i.current_stock, 0)}</span></div></td>
+					<td>
+						<div class="stock-cell">
+							<div class="stock-row warehouse-row" title="${i.item_warehouse || ''}">
+								<span class="stock-dot ${whStk}"></span>
+								<span class="stock-label">${i.item_warehouse_name || '-'}</span>
+								<span class="stock-val">${this.num(i.warehouse_stock, 0)}</span>
+							</div>
+							<div class="stock-row city-row" title="${i.city_warehouse || ''}">
+								<span class="stock-dot ${cityStk}"></span>
+								<span class="stock-label">${i.city_warehouse_name || '-'}</span>
+								<span class="stock-val">${this.num(i.city_stock, 0)}</span>
+							</div>
+						</div>
+					</td>
 					<td><div class="branch-user-cell"><span class="branch-name">${i.invoice_branch || '-'}</span><span class="creator-name">${i.invoice_creator || '-'}</span></div></td>
 				</tr>
 			`;

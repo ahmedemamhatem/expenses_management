@@ -48,7 +48,7 @@ fixtures = [
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/expenses_management/css/expenses_management.css"
-# app_include_js = "/assets/expenses_management/js/expenses_management.js"
+app_include_js = "/assets/expenses_management/js/workflow_approvals.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/expenses_management/css/expenses_management.css"
@@ -182,8 +182,40 @@ doc_events = {
         ],
         "before_submit": [
             "expenses_management.expenses_management.sales_invoice.sales_invoice.validate_available_qty",
+            "expenses_management.expenses_management.stock_reservation.reservation_handler.sales_invoice_before_submit",
         ],
-    }
+        "on_submit": [
+            "expenses_management.expenses_management.stock_reservation.reservation_handler.sales_invoice_on_submit",
+        ],
+        "on_cancel": [
+            "expenses_management.expenses_management.stock_reservation.reservation_handler.sales_invoice_on_cancel",
+        ],
+    },
+    "Delivery Note": {
+        "on_submit": [
+            "expenses_management.expenses_management.stock_reservation.reservation_handler.delivery_note_on_submit",
+        ],
+        "on_cancel": [
+            "expenses_management.expenses_management.stock_reservation.reservation_handler.delivery_note_on_cancel",
+        ],
+    },
+    "Stock Entry": {
+        "validate": [
+            "expenses_management.expenses_management.stock_reservation.reservation_handler.stock_entry_validate",
+        ],
+        "on_save": [
+            "expenses_management.expenses_management.stock_reservation.reservation_handler.stock_entry_on_save",
+        ],
+        "on_submit": [
+            "expenses_management.expenses_management.stock_reservation.reservation_handler.stock_entry_on_submit",
+        ],
+        "on_cancel": [
+            "expenses_management.expenses_management.stock_reservation.reservation_handler.stock_entry_on_cancel",
+        ],
+        "on_trash": [
+            "expenses_management.expenses_management.stock_reservation.reservation_handler.stock_entry_on_trash",
+        ],
+    },
 }
 
 # Scheduled Tasks

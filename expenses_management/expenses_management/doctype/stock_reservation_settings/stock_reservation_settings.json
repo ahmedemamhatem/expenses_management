@@ -1,0 +1,144 @@
+{
+ "actions": [],
+ "creation": "2025-01-19 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "column_break_1",
+  "bypass_role",
+  "section_break_sales",
+  "enable_for_sales_invoice",
+  "column_break_2",
+  "enable_for_delivery_note",
+  "section_break_stock",
+  "enable_for_stock_entry",
+  "column_break_3",
+  "stock_entry_types",
+  "section_break_validation",
+  "validate_on_save",
+  "column_break_4",
+  "show_reserved_qty_in_form"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enable Stock Reservation",
+   "description": "Enable or disable the stock reservation system globally"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "bypass_role",
+   "fieldtype": "Link",
+   "label": "Bypass Validation Role",
+   "options": "Role",
+   "description": "Users with this role can bypass stock reservation validation"
+  },
+  {
+   "fieldname": "section_break_sales",
+   "fieldtype": "Section Break",
+   "label": "Sales Documents"
+  },
+  {
+   "default": "1",
+   "depends_on": "enabled",
+   "fieldname": "enable_for_sales_invoice",
+   "fieldtype": "Check",
+   "label": "Enable for Sales Invoice"
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "depends_on": "enabled",
+   "fieldname": "enable_for_delivery_note",
+   "fieldtype": "Check",
+   "label": "Enable for Delivery Note"
+  },
+  {
+   "fieldname": "section_break_stock",
+   "fieldtype": "Section Break",
+   "label": "Stock Documents"
+  },
+  {
+   "default": "1",
+   "depends_on": "enabled",
+   "fieldname": "enable_for_stock_entry",
+   "fieldtype": "Check",
+   "label": "Enable for Stock Entry"
+  },
+  {
+   "fieldname": "column_break_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Material Issue\nMaterial Transfer",
+   "depends_on": "eval:doc.enabled && doc.enable_for_stock_entry",
+   "fieldname": "stock_entry_types",
+   "fieldtype": "Small Text",
+   "label": "Stock Entry Types",
+   "description": "Enter stock entry types (one per line) that should create reservations"
+  },
+  {
+   "fieldname": "section_break_validation",
+   "fieldtype": "Section Break",
+   "label": "Validation Options"
+  },
+  {
+   "default": "1",
+   "depends_on": "enabled",
+   "fieldname": "validate_on_save",
+   "fieldtype": "Check",
+   "label": "Validate on Save",
+   "description": "Validate stock availability when saving draft documents"
+  },
+  {
+   "fieldname": "column_break_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "depends_on": "enabled",
+   "fieldname": "show_reserved_qty_in_form",
+   "fieldtype": "Check",
+   "label": "Show Reserved Qty in Forms",
+   "description": "Show reserved quantity information in item forms"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2025-01-19 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Expenses Management",
+ "name": "Stock Reservation Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Stock Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

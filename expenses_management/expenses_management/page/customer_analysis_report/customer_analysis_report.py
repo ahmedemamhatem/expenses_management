@@ -313,11 +313,17 @@ def calculate_period_totals(values, extra_where, customer_join, customer_where):
 
     # Get weight and items count (without DN join to avoid duplicates)
     # Weight is only calculated for stock items (is_stock_item = 1)
+    # Handle weight_uom: if طن (ton), multiply by 1000 to get kg
     items_totals = frappe.db.sql(f"""
         SELECT
             COUNT(*) as total_items_count,
             COUNT(DISTINCT sii.item_code) as unique_items_count,
-            COALESCE(SUM(CASE WHEN COALESCE(item.is_stock_item, 0) = 1 THEN sii.stock_qty * COALESCE(item.weight_per_unit, 1) ELSE 0 END), 0) / 1000 as total_weight_tons
+            COALESCE(SUM(
+                CASE WHEN COALESCE(item.is_stock_item, 0) = 1 THEN
+                    sii.stock_qty * COALESCE(item.weight_per_unit, 1) *
+                    CASE WHEN item.weight_uom = 'طن' THEN 1000 ELSE 1 END
+                ELSE 0 END
+            ), 0) / 1000 as total_weight_tons
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
         LEFT JOIN `tabItem` item ON item.name = sii.item_code
@@ -718,10 +724,12 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
             sii.stock_uom,
             sii.qty,
             sii.stock_qty,
+            COALESCE(dni.warehouse, sii.warehouse) as item_warehouse,
             sii.base_net_amount as total_amount,
             COALESCE(sii.base_net_amount * (si.base_total_taxes_and_charges / NULLIF(si.base_net_total, 0)), 0) as tax_amount,
             sii.stock_qty * ({cost_subquery}) as cost_of_goods,
             COALESCE(item.weight_per_unit, 0) as weight_per_unit,
+            item.weight_uom,
             COALESCE(item.is_stock_item, 0) as is_stock_item
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
@@ -743,8 +751,9 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
     if not items:
         return {}
 
-    # Get unique item codes and owners
+    # Get unique item codes, warehouses and owners
     item_codes = list(set([i.item_code for i in items]))
+    warehouse_list = list(set([i.item_warehouse for i in items if i.item_warehouse]))
     owner_list = list(set([i.invoice_owner for i in items if i.invoice_owner]))
 
     # Batch get owner names
@@ -755,18 +764,84 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
         """, {"owners": tuple(owner_list)}, as_dict=1)
         owner_names = {d.name: d.full_name or d.name for d in owner_data}
 
-    # Batch get stock levels
-    stock_map = {}
-    if item_codes:
+    # Get warehouse hierarchy info (lft, rgt, custom_city_warehouse, warehouse_name)
+    warehouse_info = {}
+    warehouse_names = {}  # Maps warehouse name (ID) to warehouse_name (display name)
+    city_warehouse_map = {}  # Maps warehouse to its city warehouse (with custom_city_warehouse=1)
+    if warehouse_list:
+        wh_data = frappe.db.sql("""
+            SELECT name, warehouse_name, parent_warehouse, lft, rgt, custom_city_warehouse
+            FROM `tabWarehouse`
+            WHERE name IN %(warehouses)s OR custom_city_warehouse = 1
+        """, {"warehouses": tuple(warehouse_list)}, as_dict=1)
+
+        for wh in wh_data:
+            warehouse_info[wh.name] = wh
+            warehouse_names[wh.name] = wh.warehouse_name or wh.name
+
+        # Get all warehouses with custom_city_warehouse = 1
+        city_warehouses = frappe.db.sql("""
+            SELECT name, warehouse_name, lft, rgt FROM `tabWarehouse` WHERE custom_city_warehouse = 1
+        """, as_dict=1)
+
+        # Update warehouse_names with city warehouses
+        for city_wh in city_warehouses:
+            warehouse_names[city_wh.name] = city_wh.warehouse_name or city_wh.name
+
+        # For each invoice warehouse, find its city warehouse parent
+        for wh_name in warehouse_list:
+            wh = warehouse_info.get(wh_name)
+            if wh:
+                # Check if this warehouse itself is a city warehouse
+                if wh.get("custom_city_warehouse"):
+                    city_warehouse_map[wh_name] = wh_name
+                else:
+                    # Find parent city warehouse using lft/rgt
+                    wh_lft = wh.get("lft", 0)
+                    for city_wh in city_warehouses:
+                        if city_wh.lft <= wh_lft <= city_wh.rgt:
+                            city_warehouse_map[wh_name] = city_wh.name
+                            break
+
+    # Batch get stock levels per warehouse (for invoice warehouse stock)
+    warehouse_stock_map = {}  # {(item_code, warehouse): qty}
+    if item_codes and warehouse_list:
         stock_data = frappe.db.sql("""
             SELECT
                 b.item_code,
-                COALESCE(SUM(b.actual_qty), 0) as available_qty
+                b.warehouse,
+                COALESCE(b.actual_qty, 0) as available_qty
             FROM `tabBin` b
             WHERE b.item_code IN %(items)s
-            GROUP BY b.item_code
-        """, {"items": tuple(item_codes)}, as_dict=1)
-        stock_map = {d.item_code: d.available_qty for d in stock_data}
+            AND b.warehouse IN %(warehouses)s
+        """, {"items": tuple(item_codes), "warehouses": tuple(warehouse_list)}, as_dict=1)
+        for d in stock_data:
+            warehouse_stock_map[(d.item_code, d.warehouse)] = flt(d.available_qty)
+
+    # Batch get stock levels for city warehouses (all warehouses under city warehouse)
+    city_stock_map = {}  # {(item_code, city_warehouse): total_qty}
+    unique_city_warehouses = list(set(city_warehouse_map.values()))
+    if item_codes and unique_city_warehouses:
+        # Get lft/rgt for city warehouses
+        city_wh_ranges = frappe.db.sql("""
+            SELECT name, lft, rgt FROM `tabWarehouse` WHERE name IN %(city_whs)s
+        """, {"city_whs": tuple(unique_city_warehouses)}, as_dict=1)
+
+        for city_wh in city_wh_ranges:
+            # Get all stock in warehouses under this city warehouse
+            city_stock_data = frappe.db.sql("""
+                SELECT
+                    b.item_code,
+                    COALESCE(SUM(b.actual_qty), 0) as total_qty
+                FROM `tabBin` b
+                INNER JOIN `tabWarehouse` w ON w.name = b.warehouse
+                WHERE b.item_code IN %(items)s
+                AND w.lft >= %(lft)s AND w.rgt <= %(rgt)s
+                GROUP BY b.item_code
+            """, {"items": tuple(item_codes), "lft": city_wh.lft, "rgt": city_wh.rgt}, as_dict=1)
+
+            for d in city_stock_data:
+                city_stock_map[(d.item_code, city_wh.name)] = flt(d.total_qty)
 
     # Group items by customer
     customer_items = defaultdict(list)
@@ -777,7 +852,16 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
 
         # Only calculate weight and rate per ton for stock items
         if is_stock_item:
-            weight_per_unit_kg = flt(item.weight_per_unit) or 1
+            weight_per_unit_val = flt(item.weight_per_unit)
+            weight_uom = item.weight_uom
+
+            # Convert weight_per_unit to kg based on weight_uom
+            if weight_uom == "طن":
+                weight_per_unit_kg = weight_per_unit_val * 1000
+            else:
+                # Default assumes weight_uom is كيلو (kg)
+                weight_per_unit_kg = weight_per_unit_val or 1
+
             total_weight_kg = flt(item.stock_qty) * weight_per_unit_kg
             weight_in_tons = total_weight_kg / 1000
             rate_per_ton = flt(item.total_amount) / weight_in_tons if weight_in_tons > 0 else 0
@@ -792,6 +876,14 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
 
         tax_amount = flt(item.tax_amount, 2)
         total_after_tax = flt(item.total_amount, 2) + tax_amount
+
+        # Get warehouse-specific stock
+        item_warehouse = item.item_warehouse or ""
+        warehouse_stock = flt(warehouse_stock_map.get((item.item_code, item_warehouse), 0), 3)
+
+        # Get city warehouse stock
+        city_warehouse = city_warehouse_map.get(item_warehouse, "")
+        city_stock = flt(city_stock_map.get((item.item_code, city_warehouse), 0), 3) if city_warehouse else 0
 
         customer_items[cust].append({
             "invoice_id": item.invoice_id,
@@ -814,7 +906,13 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
             "cost_of_goods": flt(item.cost_of_goods, 2),
             "rate_per_ton": flt(rate_per_ton, 2),
             "revenue": flt(revenue, 2),
-            "current_stock": flt(stock_map.get(item.item_code, 0), 3)
+            "item_warehouse": item_warehouse,
+            "item_warehouse_name": warehouse_names.get(item_warehouse, item_warehouse),
+            "warehouse_stock": warehouse_stock,
+            "city_warehouse": city_warehouse,
+            "city_warehouse_name": warehouse_names.get(city_warehouse, city_warehouse),
+            "city_stock": city_stock,
+            "current_stock": warehouse_stock  # Keep for backward compatibility
         })
 
     return dict(customer_items)
