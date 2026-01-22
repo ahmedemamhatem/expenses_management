@@ -112,6 +112,8 @@ def get_data(filters):
 			`tabBin` bin
 		INNER JOIN
 			`tabItem` item ON item.name = bin.item_code
+		INNER JOIN
+			`tabWarehouse` wh ON wh.name = bin.warehouse
 		WHERE
 			item.is_stock_item = 1
 			AND bin.actual_qty > 0
@@ -173,13 +175,30 @@ def get_data(filters):
 					row.get("weight_uom")
 				)
 			else:
-				row["last_purchase_rate"] = 0
-				row["purchase_uom"] = ""
-				row["rate_per_ton"] = 0
-				row["rate_source"] = _("No Purchase Found")
-				row["source_document"] = ""
-				row["posting_date"] = ""
-				row["source_doctype"] = ""
+				# Try Bin valuation rate if no purchase found
+				bin_data = get_bin_valuation_rate(row["item_code"], row["warehouse"])
+				if bin_data and bin_data.get("valuation_rate"):
+					row["last_purchase_rate"] = flt(bin_data.get("valuation_rate"))
+					row["purchase_uom"] = row["stock_uom"]
+					row["rate_source"] = _("Bin Valuation")
+					row["source_document"] = ""
+					row["posting_date"] = ""
+					row["source_doctype"] = ""
+					# Calculate rate per ton using weight_per_unit
+					row["rate_per_ton"] = calculate_rate_per_ton(
+						bin_data.get("valuation_rate"),
+						row["stock_uom"],
+						row["weight_per_unit"],
+						row.get("weight_uom")
+					)
+				else:
+					row["last_purchase_rate"] = 0
+					row["purchase_uom"] = ""
+					row["rate_per_ton"] = 0
+					row["rate_source"] = _("No Rate Found")
+					row["source_document"] = ""
+					row["posting_date"] = ""
+					row["source_doctype"] = ""
 
 	return data
 
@@ -187,6 +206,9 @@ def get_data(filters):
 def get_conditions(filters):
 	"""Build filter conditions"""
 	conditions = []
+
+	if filters.get("company"):
+		conditions.append("AND wh.company = %(company)s")
 
 	if filters.get("item_code"):
 		conditions.append("AND bin.item_code = %(item_code)s")
@@ -261,5 +283,20 @@ def get_last_purchase_invoice_rate(item_code, warehouse, before_date):
 		ORDER BY pi.posting_date DESC, pi.creation DESC
 		LIMIT 1
 	""", (item_code, warehouse, before_date), as_dict=1)
+
+	return result[0] if result else None
+
+
+def get_bin_valuation_rate(item_code, warehouse):
+	"""Get valuation rate from Bin for item and warehouse"""
+	result = frappe.db.sql("""
+		SELECT valuation_rate
+		FROM `tabBin`
+		WHERE
+			item_code = %s
+			AND warehouse = %s
+			AND valuation_rate > 0
+		LIMIT 1
+	""", (item_code, warehouse), as_dict=1)
 
 	return result[0] if result else None

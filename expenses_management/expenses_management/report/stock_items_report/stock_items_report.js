@@ -4,6 +4,14 @@
 frappe.query_reports["Stock Items Report"] = {
 	"filters": [
 		{
+			"fieldname": "company",
+			"label": __("Company"),
+			"fieldtype": "Link",
+			"options": "Company",
+			"default": frappe.defaults.get_user_default("Company"),
+			"reqd": 1
+		},
+		{
 			"fieldname": "item_code",
 			"label": __("Item"),
 			"fieldtype": "Link",
@@ -26,7 +34,15 @@ frappe.query_reports["Stock Items Report"] = {
 			"fieldname": "warehouse",
 			"label": __("Warehouse"),
 			"fieldtype": "Link",
-			"options": "Warehouse"
+			"options": "Warehouse",
+			"get_query": function() {
+				var company = frappe.query_report.get_filter_value('company');
+				return {
+					"filters": {
+						"company": company
+					}
+				};
+			}
 		}
 	]
 };
