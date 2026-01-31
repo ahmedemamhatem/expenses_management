@@ -208,6 +208,9 @@ doc_events = {
         ],
     },
     "Delivery Note": {
+        "before_submit": [
+            "expenses_management.overrides.delivery_note.validate_branch_before_submit",
+        ],
         "on_submit": [
             "expenses_management.expenses_management.stock_reservation.reservation_handler.delivery_note_on_submit",
         ],
