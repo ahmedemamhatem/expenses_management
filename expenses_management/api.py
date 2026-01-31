@@ -1,6 +1,8 @@
 import frappe
 from frappe import _
 from frappe.query_builder import DocType
+from frappe.utils import getdate, cstr
+from frappe.utils.html_utils import clean_html
 
 
 @frappe.whitelist()
@@ -217,6 +219,189 @@ def get_pending_workflow_actions():
             continue
 
     return accessible_actions
+
+
+@frappe.whitelist()
+def get_assignments_and_mentions_count():
+    """Return counts of open assignments and unread mentions for current user."""
+    user = frappe.session.user
+
+    assignment_count = frappe.db.count("ToDo", {
+        "allocated_to": user,
+        "status": "Open",
+    })
+
+    mention_count = frappe.db.count("Notification Log", {
+        "for_user": user,
+        "type": "Mention",
+        "read": 0,
+    })
+
+    return {
+        "assignments": assignment_count,
+        "mentions": mention_count,
+        "total": assignment_count + mention_count,
+    }
+
+
+@frappe.whitelist()
+def get_user_assignments():
+    """Return all open ToDo assignments for the current user with enriched metadata."""
+    user = frappe.session.user
+
+    ToDo = DocType("ToDo")
+
+    query = (
+        frappe.qb.from_(ToDo)
+        .select(
+            ToDo.name,
+            ToDo.reference_type,
+            ToDo.reference_name,
+            ToDo.description,
+            ToDo.status,
+            ToDo.priority,
+            ToDo.date,
+            ToDo.creation,
+            ToDo.assigned_by,
+            ToDo.assigned_by_full_name,
+        )
+        .where(ToDo.allocated_to == user)
+        .where(ToDo.status == "Open")
+        .orderby(ToDo.creation, order=frappe.qb.desc)
+    )
+
+    assignments = query.run(as_dict=True)
+
+    today = getdate()
+    results = []
+
+    for a in assignments:
+        # Skip if reference document no longer exists
+        if a.reference_type and a.reference_name:
+            if not frappe.db.exists(a.reference_type, a.reference_name):
+                continue
+
+        a["doc_title"] = get_document_title(
+            a.reference_type, a.reference_name
+        ) if a.reference_type and a.reference_name else (a.reference_name or "")
+
+        a["is_overdue"] = bool(a.date and getdate(a.date) < today)
+
+        # Clean description to plain text snippet
+        if a.description:
+            a["description_snippet"] = cstr(
+                clean_html(a.description)
+            ).strip()[:200]
+        else:
+            a["description_snippet"] = ""
+
+        results.append(a)
+
+    return results
+
+
+@frappe.whitelist()
+def get_user_mentions():
+    """Return all unread @mentions for the current user from Notification Log."""
+    user = frappe.session.user
+
+    NL = DocType("Notification Log")
+    User = DocType("User")
+
+    query = (
+        frappe.qb.from_(NL)
+        .left_join(User).on(NL.from_user == User.name)
+        .select(
+            NL.name,
+            NL.document_type,
+            NL.document_name,
+            NL.subject,
+            NL.email_content,
+            NL.from_user,
+            NL.creation,
+            User.full_name.as_("from_user_full_name"),
+        )
+        .where(NL.for_user == user)
+        .where(NL.type == "Mention")
+        .where(NL.read == 0)
+        .orderby(NL.creation, order=frappe.qb.desc)
+    )
+
+    mentions = query.run(as_dict=True)
+
+    results = []
+    for m in mentions:
+        # Skip if reference document no longer exists
+        if m.document_type and m.document_name:
+            if not frappe.db.exists(m.document_type, m.document_name):
+                continue
+
+        m["doc_title"] = get_document_title(
+            m.document_type, m.document_name
+        ) if m.document_type and m.document_name else (m.document_name or "")
+
+        # Extract plain text snippet from email_content
+        if m.email_content:
+            m["content_snippet"] = cstr(
+                clean_html(m.email_content)
+            ).strip()[:200]
+        else:
+            m["content_snippet"] = ""
+
+        results.append(m)
+
+    return results
+
+
+@frappe.whitelist()
+def mark_assignment_complete(todo_name):
+    """Mark a ToDo assignment as closed. Only the assigned user can do this."""
+    doc = frappe.get_doc("ToDo", todo_name)
+
+    if doc.allocated_to != frappe.session.user:
+        frappe.throw(_("You can only complete assignments allocated to you"))
+
+    doc.status = "Closed"
+    doc.save(ignore_permissions=True)
+
+    return {
+        "success": True,
+        "message": _("Assignment marked as complete"),
+    }
+
+
+@frappe.whitelist()
+def close_assignment(todo_name):
+    """Cancel/dismiss a ToDo assignment. Only the assigned user can do this."""
+    doc = frappe.get_doc("ToDo", todo_name)
+
+    if doc.allocated_to != frappe.session.user:
+        frappe.throw(_("You can only close assignments allocated to you"))
+
+    doc.status = "Cancelled"
+    doc.save(ignore_permissions=True)
+
+    return {
+        "success": True,
+        "message": _("Assignment dismissed"),
+    }
+
+
+@frappe.whitelist()
+def mark_mention_read(notification_log_name):
+    """Mark a Notification Log mention as read. Only the target user can do this."""
+    doc = frappe.get_doc("Notification Log", notification_log_name)
+
+    if doc.for_user != frappe.session.user:
+        frappe.throw(_("You can only mark your own notifications as read"))
+
+    doc.read = 1
+    doc.save(ignore_permissions=True)
+
+    return {
+        "success": True,
+        "message": _("Mention marked as read"),
+    }
 
 
 def get_document_title(doctype, docname):

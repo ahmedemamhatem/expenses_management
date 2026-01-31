@@ -470,10 +470,27 @@ def calculate_trial_balance_values(accounts_by_name, gl_entries_by_account, comp
 						account[company + "_debit"] += debit
 						account[company + "_credit"] += credit
 
-		# Calculate closing balances
+		# Calculate net opening and closing balances per company
 		for company in companies_list:
-			account[company + "_closing_debit"] = account[company + "_opening_debit"] + account[company + "_debit"]
-			account[company + "_closing_credit"] = account[company + "_opening_credit"] + account[company + "_credit"]
+			# Net opening: if Dr > Cr put net in Dr, else in Cr
+			opening_net = account[company + "_opening_debit"] - account[company + "_opening_credit"]
+			if opening_net > 0:
+				account[company + "_opening_debit"] = opening_net
+				account[company + "_opening_credit"] = 0.0
+			else:
+				account[company + "_opening_debit"] = 0.0
+				account[company + "_opening_credit"] = abs(opening_net)
+
+			# Closing = opening + period
+			closing_debit = account[company + "_opening_debit"] + account[company + "_debit"]
+			closing_credit = account[company + "_opening_credit"] + account[company + "_credit"]
+			closing_net = closing_debit - closing_credit
+			if closing_net > 0:
+				account[company + "_closing_debit"] = closing_net
+				account[company + "_closing_credit"] = 0.0
+			else:
+				account[company + "_closing_debit"] = 0.0
+				account[company + "_closing_credit"] = abs(closing_net)
 
 
 def accumulate_trial_balance_values_into_parents(accounts, accounts_by_name, companies):
@@ -485,6 +502,31 @@ def accumulate_trial_balance_values_into_parents(accounts, accounts_by_name, com
 				for field in value_fields:
 					company_field = company + "_" + field
 					parent[company_field] = parent.get(company_field, 0.0) + d.get(company_field, 0.0)
+
+	# After accumulation, recalculate net opening/closing for parent accounts
+	for d in accounts:
+		if d.account_key in accounts_by_name and accounts_by_name.get(d.account_key):
+			account = accounts_by_name[d.account_key]
+			for company in companies:
+				# Net opening
+				opening_net = account.get(company + "_opening_debit", 0.0) - account.get(company + "_opening_credit", 0.0)
+				if opening_net > 0:
+					account[company + "_opening_debit"] = opening_net
+					account[company + "_opening_credit"] = 0.0
+				else:
+					account[company + "_opening_debit"] = 0.0
+					account[company + "_opening_credit"] = abs(opening_net)
+
+				# Net closing
+				closing_debit = account.get(company + "_opening_debit", 0.0) + account.get(company + "_debit", 0.0)
+				closing_credit = account.get(company + "_opening_credit", 0.0) + account.get(company + "_credit", 0.0)
+				closing_net = closing_debit - closing_credit
+				if closing_net > 0:
+					account[company + "_closing_debit"] = closing_net
+					account[company + "_closing_credit"] = 0.0
+				else:
+					account[company + "_closing_debit"] = 0.0
+					account[company + "_closing_credit"] = abs(closing_net)
 
 
 def prepare_trial_balance_data(accounts, filters, parent_children_map, companies, company_currency):
@@ -538,6 +580,26 @@ def calculate_trial_balance_total_row(accounts, companies, company_currency):
 				for field in value_fields:
 					company_field = company + "_" + field
 					total_row[company_field] += d.get(company_field, 0.0)
+
+	# Apply net logic on totals
+	for company in companies:
+		opening_net = total_row[company + "_opening_debit"] - total_row[company + "_opening_credit"]
+		if opening_net > 0:
+			total_row[company + "_opening_debit"] = opening_net
+			total_row[company + "_opening_credit"] = 0.0
+		else:
+			total_row[company + "_opening_debit"] = 0.0
+			total_row[company + "_opening_credit"] = abs(opening_net)
+
+		closing_debit = total_row[company + "_opening_debit"] + total_row[company + "_debit"]
+		closing_credit = total_row[company + "_opening_credit"] + total_row[company + "_credit"]
+		closing_net = closing_debit - closing_credit
+		if closing_net > 0:
+			total_row[company + "_closing_debit"] = closing_net
+			total_row[company + "_closing_credit"] = 0.0
+		else:
+			total_row[company + "_closing_debit"] = 0.0
+			total_row[company + "_closing_credit"] = abs(closing_net)
 
 	return total_row
 

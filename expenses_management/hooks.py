@@ -50,7 +50,9 @@ fixtures = [
 # app_include_css = "/assets/expenses_management/css/expenses_management.css"
 app_include_js = [
     "/assets/expenses_management/js/erpnext_fix.js",
-    "/assets/expenses_management/js/workflow_approvals.js"
+    "/assets/expenses_management/js/workflow_approvals.js",
+    "/assets/expenses_management/js/assignments_mentions.js",
+    "/assets/expenses_management/js/attachment_guard.js",
 ]
 
 # include js, css files in header of web template
@@ -115,6 +117,10 @@ doctype_js = {
 # before_install = "expenses_management.install.before_install"
 # after_install = "expenses_management.install.after_install"
 
+after_migrate = [
+    "expenses_management.overrides.loan_application.backfill_applicant_names",
+]
+
 # Uninstallation
 # ------------
 
@@ -177,6 +183,13 @@ override_doctype_class = {
 # }
 
 doc_events = {
+    "Loan Application": {
+        "validate": "expenses_management.overrides.loan_application.set_applicant_name",
+    },
+    "File": {
+        "before_insert": "expenses_management.overrides.attachment_guard.block_attachment_on_submitted",
+        "on_trash": "expenses_management.overrides.attachment_guard.block_remove_attachment_on_submitted",
+    },
     "Sales Invoice": {
         "validate": [
             "expenses_management.expenses_management.sales_invoice.sales_invoice.update_available_qty_on_validate",
