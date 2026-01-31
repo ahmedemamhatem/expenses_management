@@ -16,7 +16,7 @@ fixtures = [
     {
         "dt": "Property Setter",
         "filters": [
-            ["property_type", "in", ["options", "default", "read_only", "hidden", "reqd"]]
+            ["property_type", "in", ["options", "default", "read_only", "hidden", "reqd", "Data", "Check"]]
         ]
     },
     {
