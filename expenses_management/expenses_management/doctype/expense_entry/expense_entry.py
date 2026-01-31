@@ -97,8 +97,8 @@ class ExpenseEntry(Document):
 		self.make_gl_entries()
 
 	def on_cancel(self):
-		"""Reverse GL Entries on cancel"""
-		self.make_gl_entries(cancel=True)
+		"""Cancel GL Entries on cancel"""
+		frappe.db.set_value("GL Entry", {"voucher_type": self.doctype, "voucher_no": self.name}, "is_cancelled", 1)
 
 	def make_gl_entries(self, cancel=False):
 		"""Create or reverse GL Entries for the expense"""
