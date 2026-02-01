@@ -222,17 +222,33 @@ def get_report_data(company, from_date=None, to_date=None, branch=None, customer
 
 def get_cost_subquery():
     """Returns SQL subquery to get cost per stock UOM:
-    - For stock items: Use SLE valuation_rate, fallback to Bin average
+    - For stock items: Use latest Purchase Receipt incoming_rate from SLE, fallback to Bin average
     - For non-stock items: Use last purchase invoice stock_uom_rate (rate per stock UOM) in same branch
+    Note: DN SLE valuation_rate is avoided because it can contain corrupt values.
+    Purchase Receipt incoming_rate is the most reliable cost source.
     """
     return """
         CASE WHEN COALESCE(item.is_stock_item, 0) = 1 THEN
-            COALESCE(sle.valuation_rate, (
-                SELECT COALESCE(SUM(b.actual_qty * b.valuation_rate) / NULLIF(SUM(b.actual_qty), 0), 0)
-                FROM `tabBin` b
-                WHERE b.item_code = sii.item_code
-                AND b.actual_qty > 0
-            ), 0)
+            COALESCE(
+                NULLIF((
+                    SELECT sle_pr.incoming_rate
+                    FROM `tabStock Ledger Entry` sle_pr
+                    WHERE sle_pr.item_code = sii.item_code
+                    AND sle_pr.voucher_type IN ('Purchase Receipt', 'Purchase Invoice')
+                    AND sle_pr.is_cancelled = 0
+                    AND sle_pr.actual_qty > 0
+                    AND sle_pr.incoming_rate > 0
+                    ORDER BY sle_pr.posting_date DESC, sle_pr.creation DESC
+                    LIMIT 1
+                ), 0),
+                NULLIF((
+                    SELECT COALESCE(SUM(b.actual_qty * b.valuation_rate) / NULLIF(SUM(b.actual_qty), 0), 0)
+                    FROM `tabBin` b
+                    WHERE b.item_code = sii.item_code
+                    AND b.actual_qty > 0
+                ), 0),
+                0
+            )
         ELSE
             COALESCE((
                 SELECT COALESCE(pii_sub.stock_uom_rate, pii_sub.base_rate / NULLIF(pii_sub.conversion_factor, 0), pii_sub.base_rate)
@@ -346,8 +362,6 @@ def calculate_period_totals(values, extra_where, customer_join, customer_where):
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
         LEFT JOIN `tabItem` item ON item.name = sii.item_code
-        LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
-        LEFT JOIN `tabStock Ledger Entry` sle ON sle.voucher_type = 'Delivery Note' AND sle.voucher_no = dni.parent AND sle.voucher_detail_no = dni.name AND sle.is_cancelled = 0
         {customer_join}
         WHERE si.docstatus = 1
         AND si.is_return = 0
@@ -479,8 +493,6 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
         LEFT JOIN `tabItem` item ON item.name = sii.item_code
-        LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
-        LEFT JOIN `tabStock Ledger Entry` sle ON sle.voucher_type = 'Delivery Note' AND sle.voucher_no = dni.parent AND sle.voucher_detail_no = dni.name AND sle.is_cancelled = 0
         WHERE si.docstatus = 1
         AND si.is_return = 0
         AND si.status != 'Credit Note Issued'
@@ -500,8 +512,6 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
         LEFT JOIN `tabItem` item ON item.name = sii.item_code
-        LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
-        LEFT JOIN `tabStock Ledger Entry` sle ON sle.voucher_type = 'Delivery Note' AND sle.voucher_no = dni.parent AND sle.voucher_detail_no = dni.name AND sle.is_cancelled = 0
         {customer_join}
         WHERE si.docstatus = 1
         AND si.is_return = 0
@@ -565,35 +575,50 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
 
     invoice_dates_map = {d.customer: d for d in invoice_dates}
 
-    # Last invoice before period (stock items: SLE/Bin, non-stock items: last purchase invoice)
-    last_invoice_details = frappe.db.sql("""
+    # Last invoice before period (stock items: Purchase Receipt SLE, non-stock items: last purchase invoice)
+    last_cost_subquery = """
+        CASE WHEN COALESCE(item.is_stock_item, 0) = 1 THEN
+            COALESCE(
+                NULLIF((
+                    SELECT sle_pr.incoming_rate
+                    FROM `tabStock Ledger Entry` sle_pr
+                    WHERE sle_pr.item_code = sii.item_code
+                    AND sle_pr.voucher_type IN ('Purchase Receipt', 'Purchase Invoice')
+                    AND sle_pr.is_cancelled = 0
+                    AND sle_pr.actual_qty > 0
+                    AND sle_pr.incoming_rate > 0
+                    ORDER BY sle_pr.posting_date DESC, sle_pr.creation DESC
+                    LIMIT 1
+                ), 0),
+                NULLIF((
+                    SELECT COALESCE(SUM(b.actual_qty * b.valuation_rate) / NULLIF(SUM(b.actual_qty), 0), 0)
+                    FROM `tabBin` b
+                    WHERE b.item_code = sii.item_code
+                    AND b.actual_qty > 0
+                ), 0),
+                0
+            )
+        ELSE
+            COALESCE((
+                SELECT COALESCE(pii_sub.stock_uom_rate, pii_sub.base_rate / NULLIF(pii_sub.conversion_factor, 0), pii_sub.base_rate)
+                FROM `tabPurchase Invoice Item` pii_sub
+                INNER JOIN `tabPurchase Invoice` pi_sub ON pi_sub.name = pii_sub.parent
+                WHERE pii_sub.item_code = sii.item_code
+                AND pi_sub.branch = t.last_invoice_branch
+                AND pi_sub.docstatus = 1
+                ORDER BY pi_sub.posting_date DESC, pi_sub.creation DESC
+                LIMIT 1
+            ), 0)
+        END
+    """
+    last_invoice_details = frappe.db.sql(f"""
         SELECT
             t.customer,
             t.last_invoice_id,
             t.last_invoice_date,
             t.last_invoice_amount,
             t.last_invoice_branch,
-            COALESCE(SUM(sii.base_net_amount - (sii.stock_qty *
-                CASE WHEN COALESCE(item.is_stock_item, 0) = 1 THEN
-                    COALESCE(sle.valuation_rate, (
-                        SELECT COALESCE(SUM(b.actual_qty * b.valuation_rate) / NULLIF(SUM(b.actual_qty), 0), 0)
-                        FROM `tabBin` b
-                        WHERE b.item_code = sii.item_code
-                        AND b.actual_qty > 0
-                    ), 0)
-                ELSE
-                    COALESCE((
-                        SELECT COALESCE(pii_sub.stock_uom_rate, pii_sub.base_rate / NULLIF(pii_sub.conversion_factor, 0), pii_sub.base_rate)
-                        FROM `tabPurchase Invoice Item` pii_sub
-                        INNER JOIN `tabPurchase Invoice` pi_sub ON pi_sub.name = pii_sub.parent
-                        WHERE pii_sub.item_code = sii.item_code
-                        AND pi_sub.branch = t.last_invoice_branch
-                        AND pi_sub.docstatus = 1
-                        ORDER BY pi_sub.posting_date DESC, pi_sub.creation DESC
-                        LIMIT 1
-                    ), 0)
-                END
-            )), 0) as last_invoice_profit
+            COALESCE(SUM(sii.base_net_amount - (sii.stock_qty * ({last_cost_subquery}))), 0) as last_invoice_profit
         FROM (
             SELECT
                 si.customer,
@@ -622,8 +647,6 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
         ) t
         LEFT JOIN `tabSales Invoice Item` sii ON sii.parent = t.last_invoice_id
         LEFT JOIN `tabItem` item ON item.name = sii.item_code
-        LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
-        LEFT JOIN `tabStock Ledger Entry` sle ON sle.voucher_type = 'Delivery Note' AND sle.voucher_no = dni.parent AND sle.voucher_detail_no = dni.name AND sle.is_cancelled = 0
         GROUP BY t.customer, t.last_invoice_id, t.last_invoice_date, t.last_invoice_amount, t.last_invoice_branch
     """, {"company": company, "customers": customer_list, "from_date": from_date}, as_dict=1)
 
@@ -718,13 +741,18 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
             si.posting_date,
             si.owner as invoice_owner,
             si.branch as invoice_branch,
+            si.base_grand_total as invoice_grand_total,
             sii.item_code,
             sii.item_name,
             sii.uom as invoice_uom,
             sii.stock_uom,
             sii.qty,
             sii.stock_qty,
-            COALESCE(dni.warehouse, sii.warehouse) as item_warehouse,
+            COALESCE(
+                (SELECT dni.warehouse FROM `tabDelivery Note Item` dni
+                 WHERE dni.si_detail = sii.name AND dni.docstatus = 1 LIMIT 1),
+                sii.warehouse
+            ) as item_warehouse,
             sii.base_net_amount as total_amount,
             COALESCE(sii.base_net_amount * (si.base_total_taxes_and_charges / NULLIF(si.base_net_total, 0)), 0) as tax_amount,
             sii.stock_qty * ({cost_subquery}) as cost_of_goods,
@@ -734,8 +762,6 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
         LEFT JOIN `tabItem` item ON item.name = sii.item_code
-        LEFT JOIN `tabDelivery Note Item` dni ON dni.si_detail = sii.name AND dni.docstatus = 1
-        LEFT JOIN `tabStock Ledger Entry` sle ON sle.voucher_type = 'Delivery Note' AND sle.voucher_no = dni.parent AND sle.voucher_detail_no = dni.name AND sle.is_cancelled = 0
         {customer_join}
         WHERE si.docstatus = 1
         AND si.company = %(company)s
@@ -887,6 +913,7 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
 
         customer_items[cust].append({
             "invoice_id": item.invoice_id,
+            "invoice_grand_total": flt(item.invoice_grand_total, 2),
             "posting_date": str(item.posting_date) if item.posting_date else "",
             "invoice_creator": creator_name,
             "invoice_branch": item.invoice_branch or "",
