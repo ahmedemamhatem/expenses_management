@@ -221,24 +221,45 @@ def get_report_data(company, from_date=None, to_date=None, branch=None, customer
 
 
 def get_cost_subquery():
-    """Returns SQL subquery to get cost per stock UOM:
-    - For stock items: Use latest Purchase Receipt incoming_rate from SLE, fallback to Bin average
-    - For non-stock items: Use last purchase invoice stock_uom_rate (rate per stock UOM) in same branch
-    Note: DN SLE valuation_rate is avoided because it can contain corrupt values.
-    Purchase Receipt incoming_rate is the most reliable cost source.
+    """Returns SQL subquery to get cost per stock UOM (e.g. per kg):
+    For stock items: Use latest Purchase Receipt base_amount / (qty * item_uom_cf).
+    The item UOM conversion factor (from tabUOM Conversion Detail) properly converts
+    purchase UOM to stock UOM, handling broken conversion_factor in purchase docs
+    (e.g., items purchased in tons with cf=1 instead of 1000).
+    Falls back to Purchase Invoice, then Bin weighted average, then 0.
+    For non-stock items: Use last purchase invoice rate converted via item UOM cf.
     """
     return """
         CASE WHEN COALESCE(item.is_stock_item, 0) = 1 THEN
             COALESCE(
                 NULLIF((
-                    SELECT sle_pr.incoming_rate
-                    FROM `tabStock Ledger Entry` sle_pr
-                    WHERE sle_pr.item_code = sii.item_code
-                    AND sle_pr.voucher_type IN ('Purchase Receipt', 'Purchase Invoice')
-                    AND sle_pr.is_cancelled = 0
-                    AND sle_pr.actual_qty > 0
-                    AND sle_pr.incoming_rate > 0
-                    ORDER BY sle_pr.posting_date DESC, sle_pr.creation DESC
+                    SELECT pri_sub.base_amount / NULLIF(
+                        pri_sub.qty * COALESCE(
+                            (SELECT ucd.conversion_factor FROM `tabUOM Conversion Detail` ucd
+                             WHERE ucd.parent = pri_sub.item_code AND ucd.uom = pri_sub.uom LIMIT 1),
+                            pri_sub.conversion_factor, 1
+                        ), 0)
+                    FROM `tabPurchase Receipt Item` pri_sub
+                    INNER JOIN `tabPurchase Receipt` pr_sub ON pr_sub.name = pri_sub.parent
+                    WHERE pri_sub.item_code = sii.item_code
+                    AND pr_sub.docstatus = 1
+                    AND pri_sub.qty > 0
+                    ORDER BY pr_sub.posting_date DESC, pr_sub.creation DESC
+                    LIMIT 1
+                ), 0),
+                NULLIF((
+                    SELECT pii_sub.base_amount / NULLIF(
+                        pii_sub.qty * COALESCE(
+                            (SELECT ucd.conversion_factor FROM `tabUOM Conversion Detail` ucd
+                             WHERE ucd.parent = pii_sub.item_code AND ucd.uom = pii_sub.uom LIMIT 1),
+                            pii_sub.conversion_factor, 1
+                        ), 0)
+                    FROM `tabPurchase Invoice Item` pii_sub
+                    INNER JOIN `tabPurchase Invoice` pi_sub ON pi_sub.name = pii_sub.parent
+                    WHERE pii_sub.item_code = sii.item_code
+                    AND pi_sub.docstatus = 1
+                    AND pii_sub.qty > 0
+                    ORDER BY pi_sub.posting_date DESC, pi_sub.creation DESC
                     LIMIT 1
                 ), 0),
                 NULLIF((
@@ -251,7 +272,12 @@ def get_cost_subquery():
             )
         ELSE
             COALESCE((
-                SELECT COALESCE(pii_sub.stock_uom_rate, pii_sub.base_rate / NULLIF(pii_sub.conversion_factor, 0), pii_sub.base_rate)
+                SELECT pii_sub.base_amount / NULLIF(
+                    pii_sub.qty * COALESCE(
+                        (SELECT ucd.conversion_factor FROM `tabUOM Conversion Detail` ucd
+                         WHERE ucd.parent = pii_sub.item_code AND ucd.uom = pii_sub.uom LIMIT 1),
+                        pii_sub.conversion_factor, 1
+                    ), 0)
                 FROM `tabPurchase Invoice Item` pii_sub
                 INNER JOIN `tabPurchase Invoice` pi_sub ON pi_sub.name = pii_sub.parent
                 WHERE pii_sub.item_code = sii.item_code
@@ -575,42 +601,8 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
 
     invoice_dates_map = {d.customer: d for d in invoice_dates}
 
-    # Last invoice before period (stock items: Purchase Receipt SLE, non-stock items: last purchase invoice)
-    last_cost_subquery = """
-        CASE WHEN COALESCE(item.is_stock_item, 0) = 1 THEN
-            COALESCE(
-                NULLIF((
-                    SELECT sle_pr.incoming_rate
-                    FROM `tabStock Ledger Entry` sle_pr
-                    WHERE sle_pr.item_code = sii.item_code
-                    AND sle_pr.voucher_type IN ('Purchase Receipt', 'Purchase Invoice')
-                    AND sle_pr.is_cancelled = 0
-                    AND sle_pr.actual_qty > 0
-                    AND sle_pr.incoming_rate > 0
-                    ORDER BY sle_pr.posting_date DESC, sle_pr.creation DESC
-                    LIMIT 1
-                ), 0),
-                NULLIF((
-                    SELECT COALESCE(SUM(b.actual_qty * b.valuation_rate) / NULLIF(SUM(b.actual_qty), 0), 0)
-                    FROM `tabBin` b
-                    WHERE b.item_code = sii.item_code
-                    AND b.actual_qty > 0
-                ), 0),
-                0
-            )
-        ELSE
-            COALESCE((
-                SELECT COALESCE(pii_sub.stock_uom_rate, pii_sub.base_rate / NULLIF(pii_sub.conversion_factor, 0), pii_sub.base_rate)
-                FROM `tabPurchase Invoice Item` pii_sub
-                INNER JOIN `tabPurchase Invoice` pi_sub ON pi_sub.name = pii_sub.parent
-                WHERE pii_sub.item_code = sii.item_code
-                AND pi_sub.branch = t.last_invoice_branch
-                AND pi_sub.docstatus = 1
-                ORDER BY pi_sub.posting_date DESC, pi_sub.creation DESC
-                LIMIT 1
-            ), 0)
-        END
-    """
+    # Last invoice before period - use same approach as get_cost_subquery but with branch from t.last_invoice_branch
+    last_cost_subquery = get_cost_subquery().replace("si.branch", "t.last_invoice_branch")
     last_invoice_details = frappe.db.sql(f"""
         SELECT
             t.customer,
