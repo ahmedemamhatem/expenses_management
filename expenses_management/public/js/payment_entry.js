@@ -2,7 +2,8 @@ frappe.ui.form.on("Payment Entry", {
     refresh: function(frm) {
         if (frm.doc.payment_type === "Receive"
             && frm.doc.party_type === "Customer"
-            && frm.doc.party) {
+            && frm.doc.party
+            && (frappe.user.has_role('System Manager') || frappe.user.has_role('CEO'))) {
             frm.add_custom_button(__('تحليل العميل'), function() {
                 show_customer_analysis(frm);
             }).addClass('btn-info');

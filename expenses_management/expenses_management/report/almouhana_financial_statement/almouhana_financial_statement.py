@@ -272,9 +272,17 @@ def get_cash_flow_data(fiscal_year, companies, filters):
 
 
 def get_trial_balance_data(fiscal_year, companies, filters):
-	"""Get Trial Balance data with company-wise columns like other consolidated reports."""
+	"""Get Trial Balance data.
+
+	- Single company: simple columns (Opening Dr/Cr, Debit, Credit, Closing Dr/Cr)
+	- Group company: each subsidiary gets its own columns
+	- Group + "Accumulated in Group Company": each subsidiary columns + accumulated group total columns
+	"""
 	company_currency = get_company_currency(filters)
 	companies_list = list(companies.keys()) if isinstance(companies, dict) else companies
+	is_group = len(companies_list) > 1
+	accumulated = filters.get("accumulated_in_group_company") and is_group
+	group_company = filters.get("company")
 
 	if filters.filter_based_on == "Fiscal Year":
 		start_date = fiscal_year.year_start_date
@@ -286,7 +294,7 @@ def get_trial_balance_data(fiscal_year, companies, filters):
 	filters.start_date = start_date
 	filters.end_date = end_date
 
-	# Get all accounts for all companies (same pattern as get_accounts)
+	# Get accounts from all companies in the group
 	all_accounts = []
 	for company in companies_list:
 		all_accounts.extend(
@@ -310,22 +318,20 @@ def get_trial_balance_data(fiscal_year, companies, filters):
 		)
 
 	if not all_accounts:
-		return get_trial_balance_columns(companies_list, filters), [], None
+		return get_trial_balance_columns(companies_list, filters, is_group, accumulated, group_company), [], None
 
-	# Use the same pattern as other reports
 	all_accounts = update_parent_account_names(all_accounts)
 	accounts, accounts_by_name, parent_children_map = filter_accounts(all_accounts)
 
 	gl_entries_by_account = {}
 
-	# Get GL entries for all root types
 	for root in frappe.db.sql(
 		"""select lft, rgt, root_type from tabAccount
 			where ifnull(parent_account, '') = ''""",
 		as_dict=1,
 	):
 		set_gl_entries_by_account(
-			None,  # from_date=None to get all entries for opening balance calculation
+			None,
 			end_date,
 			root.lft,
 			root.rgt,
@@ -337,23 +343,51 @@ def get_trial_balance_data(fiscal_year, companies, filters):
 			root_type=root.root_type,
 		)
 
-	calculate_trial_balance_values(accounts_by_name, gl_entries_by_account, companies_list, companies, filters, start_date)
+	# Always calculate per each subsidiary company
+	calculate_trial_balance_values(
+		accounts_by_name, gl_entries_by_account, companies_list,
+		companies, filters, start_date
+	)
 	accumulate_trial_balance_values_into_parents(accounts, accounts_by_name, companies_list)
+	apply_opening_closing_for_parents(accounts, accounts_by_name, parent_children_map, companies_list)
 
-	data = prepare_trial_balance_data(accounts, filters, parent_children_map, companies_list, company_currency)
+	# If accumulated, also compute the group total by summing all subsidiaries
+	if accumulated:
+		compute_accumulated_group_values(accounts, accounts_by_name, companies_list, group_company)
+
+	# Determine which columns to show in data
+	display_companies = list(companies_list)
+	if accumulated:
+		display_companies.append(group_company + "_total")
+
+	data = prepare_trial_balance_data(accounts, filters, parent_children_map, display_companies, company_currency)
 	data = filter_out_zero_value_rows(
 		data, parent_children_map, show_zero_values=filters.get("show_zero_values")
 	)
 
-	total_row = calculate_trial_balance_total_row(accounts, companies_list, company_currency)
+	total_row = calculate_trial_balance_total_row(accounts, display_companies, company_currency)
 	data.extend([{}, total_row])
 
-	columns = get_trial_balance_columns(companies_list, filters)
+	columns = get_trial_balance_columns(companies_list, filters, is_group, accumulated, group_company)
 
 	return columns, data, None
 
 
-def get_trial_balance_columns(companies, filters):
+def compute_accumulated_group_values(accounts, accounts_by_name, companies_list, group_company):
+	"""Sum all subsidiary company values into a group total pseudo-company column."""
+	total_key = group_company + "_total"
+
+	for key, account in accounts_by_name.items():
+		for field in value_fields:
+			total_field = total_key + "_" + field
+			account[total_field] = 0.0
+			for company in companies_list:
+				account[total_field] += flt(account.get(company + "_" + field, 0.0))
+
+	# Also set on account objects in the list (they reference same dicts via accounts_by_name)
+
+
+def get_trial_balance_columns(companies, filters, is_group=False, accumulated=False, group_company=None):
 	columns = [
 		{
 			"fieldname": "account",
@@ -371,67 +405,89 @@ def get_trial_balance_columns(companies, filters):
 		},
 	]
 
-	for company in companies:
-		apply_currency_formatter = 1 if not filters.presentation_currency else 0
-		currency = filters.presentation_currency or erpnext.get_company_currency(company)
-		columns.extend([
-			{
-				"fieldname": company + "_opening_debit",
-				"label": f"{company} " + _("Opening (Dr)"),
-				"fieldtype": "Currency",
-				"options": "currency",
-				"width": 120,
-				"apply_currency_formatter": apply_currency_formatter,
-			},
-			{
-				"fieldname": company + "_opening_credit",
-				"label": f"{company} " + _("Opening (Cr)"),
-				"fieldtype": "Currency",
-				"options": "currency",
-				"width": 120,
-				"apply_currency_formatter": apply_currency_formatter,
-			},
-			{
-				"fieldname": company + "_debit",
-				"label": f"{company} " + _("Debit"),
-				"fieldtype": "Currency",
-				"options": "currency",
-				"width": 120,
-				"apply_currency_formatter": apply_currency_formatter,
-			},
-			{
-				"fieldname": company + "_credit",
-				"label": f"{company} " + _("Credit"),
-				"fieldtype": "Currency",
-				"options": "currency",
-				"width": 120,
-				"apply_currency_formatter": apply_currency_formatter,
-			},
-			{
-				"fieldname": company + "_closing_debit",
-				"label": f"{company} " + _("Closing (Dr)"),
-				"fieldtype": "Currency",
-				"options": "currency",
-				"width": 120,
-				"apply_currency_formatter": apply_currency_formatter,
-			},
-			{
-				"fieldname": company + "_closing_credit",
-				"label": f"{company} " + _("Closing (Cr)"),
-				"fieldtype": "Currency",
-				"options": "currency",
-				"width": 120,
-				"apply_currency_formatter": apply_currency_formatter,
-			},
-		])
+	apply_currency_formatter = 1 if not filters.presentation_currency else 0
+
+	if not is_group:
+		# Single company - simple columns without company prefix
+		company = companies[0]
+		columns.extend(_make_tb_columns(company, apply_currency_formatter, label_prefix=""))
+	else:
+		# Group company - each subsidiary gets its own prefixed columns
+		for company in companies:
+			columns.extend(_make_tb_columns(company, apply_currency_formatter, label_prefix=company + " "))
+
+		# If accumulated, add group total columns
+		if accumulated and group_company:
+			total_key = group_company + "_total"
+			columns.extend(_make_tb_columns(
+				total_key, apply_currency_formatter,
+				label_prefix=_("Accumulated") + " "
+			))
 
 	return columns
 
 
+def _make_tb_columns(company_key, apply_currency_formatter, label_prefix=""):
+	"""Helper to generate the 6 trial balance columns for a given company key."""
+	return [
+		{
+			"fieldname": company_key + "_opening_debit",
+			"label": label_prefix + _("Opening (Dr)"),
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 120,
+			"apply_currency_formatter": apply_currency_formatter,
+		},
+		{
+			"fieldname": company_key + "_opening_credit",
+			"label": label_prefix + _("Opening (Cr)"),
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 120,
+			"apply_currency_formatter": apply_currency_formatter,
+		},
+		{
+			"fieldname": company_key + "_debit",
+			"label": label_prefix + _("Debit"),
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 120,
+			"apply_currency_formatter": apply_currency_formatter,
+		},
+		{
+			"fieldname": company_key + "_credit",
+			"label": label_prefix + _("Credit"),
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 120,
+			"apply_currency_formatter": apply_currency_formatter,
+		},
+		{
+			"fieldname": company_key + "_closing_debit",
+			"label": label_prefix + _("Closing (Dr)"),
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 120,
+			"apply_currency_formatter": apply_currency_formatter,
+		},
+		{
+			"fieldname": company_key + "_closing_credit",
+			"label": label_prefix + _("Closing (Cr)"),
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 120,
+			"apply_currency_formatter": apply_currency_formatter,
+		},
+	]
+
+
 def calculate_trial_balance_values(accounts_by_name, gl_entries_by_account, companies_list, companies, filters, start_date):
-	"""Calculate opening, period, and closing debit/credit values per company."""
+	"""Calculate opening, period, and closing debit/credit values per each company.
+
+	Each GL entry goes to the company it belongs to.
+	"""
 	for key, account in accounts_by_name.items():
-		# Initialize company-wise values
+		# Initialize values for all companies
 		for company in companies_list:
 			account[company + "_opening_debit"] = 0.0
 			account[company + "_opening_credit"] = 0.0
@@ -443,58 +499,54 @@ def calculate_trial_balance_values(accounts_by_name, gl_entries_by_account, comp
 		for entry in gl_entries_by_account.get(key, []):
 			entry_company = entry.company
 
-			# Check if entry belongs to this company or its subsidiaries (same logic as calculate_values)
 			for company in companies_list:
-				if (
-					entry_company == company
-					or (filters.get("accumulated_in_group_company") and entry_company in companies.get(company, []))
-				):
-					debit, credit = flt(entry.debit), flt(entry.credit)
+				if entry_company != company:
+					continue
 
-					# Handle currency conversion for subsidiaries (same as calculate_values)
-					if (
-						not filters.get("presentation_currency")
-						and entry_company != company
-						and filters.get("accumulated_in_group_company")
-					):
-						parent_company_currency = erpnext.get_company_currency(account.company)
-						child_company_currency = erpnext.get_company_currency(entry_company)
-						if parent_company_currency != child_company_currency:
-							debit = convert(debit, parent_company_currency, child_company_currency, filters.end_date)
-							credit = convert(credit, parent_company_currency, child_company_currency, filters.end_date)
+				debit, credit = flt(entry.debit), flt(entry.credit)
 
-					if entry.posting_date < getdate(start_date):
-						account[company + "_opening_debit"] += debit
-						account[company + "_opening_credit"] += credit
-					else:
-						account[company + "_debit"] += debit
-						account[company + "_credit"] += credit
+				if entry.posting_date < getdate(start_date):
+					account[company + "_opening_debit"] += debit
+					account[company + "_opening_credit"] += credit
+				else:
+					account[company + "_debit"] += debit
+					account[company + "_credit"] += credit
 
-		# Calculate net opening and closing balances per company
+		# Calculate closing = opening + period
 		for company in companies_list:
-			# Net opening: if Dr > Cr put net in Dr, else in Cr
-			opening_net = account[company + "_opening_debit"] - account[company + "_opening_credit"]
-			if opening_net > 0:
-				account[company + "_opening_debit"] = opening_net
-				account[company + "_opening_credit"] = 0.0
-			else:
-				account[company + "_opening_debit"] = 0.0
-				account[company + "_opening_credit"] = abs(opening_net)
+			account[company + "_closing_debit"] = account[company + "_opening_debit"] + account[company + "_debit"]
+			account[company + "_closing_credit"] = account[company + "_opening_credit"] + account[company + "_credit"]
 
-			# Closing = opening + period
-			closing_debit = account[company + "_opening_debit"] + account[company + "_debit"]
-			closing_credit = account[company + "_opening_credit"] + account[company + "_credit"]
-			closing_net = closing_debit - closing_credit
-			if closing_net > 0:
-				account[company + "_closing_debit"] = closing_net
-				account[company + "_closing_credit"] = 0.0
-			else:
-				account[company + "_closing_debit"] = 0.0
-				account[company + "_closing_credit"] = abs(closing_net)
+		# Apply opening/closing netting for leaf (non-group) accounts based on root_type
+		is_group_account = account.get("is_group", 0)
+		if not is_group_account:
+			root_type = account.get("root_type", "")
+			for company in companies_list:
+				_apply_opening_closing_netting(account, company, root_type)
+
+
+def _apply_opening_closing_netting(row, company_key, root_type):
+	"""Net opening/closing Dr/Cr based on root_type.
+
+	Asset, Equity, Expense accounts are naturally Debit-side.
+	Liability, Income accounts are naturally Credit-side.
+	"""
+	dr_or_cr = "debit" if root_type in ("Asset", "Equity", "Expense") else "credit"
+	reverse_dr_or_cr = "credit" if dr_or_cr == "debit" else "debit"
+
+	for col_type in ("opening", "closing"):
+		valid_col = company_key + "_" + col_type + "_" + dr_or_cr
+		reverse_col = company_key + "_" + col_type + "_" + reverse_dr_or_cr
+		row[valid_col] -= row[reverse_col]
+		if row[valid_col] < 0:
+			row[reverse_col] = abs(row[valid_col])
+			row[valid_col] = 0.0
+		else:
+			row[reverse_col] = 0.0
 
 
 def accumulate_trial_balance_values_into_parents(accounts, accounts_by_name, companies):
-	"""Accumulate children's values in parent accounts (same pattern as accumulate_values_into_parents)."""
+	"""Accumulate children's values in parent accounts."""
 	for d in reversed(accounts):
 		if d.parent_account_name and d.parent_account_name in accounts_by_name:
 			parent = accounts_by_name[d.parent_account_name]
@@ -503,34 +555,18 @@ def accumulate_trial_balance_values_into_parents(accounts, accounts_by_name, com
 					company_field = company + "_" + field
 					parent[company_field] = parent.get(company_field, 0.0) + d.get(company_field, 0.0)
 
-	# After accumulation, recalculate net opening/closing for parent accounts
+
+def apply_opening_closing_for_parents(accounts, accounts_by_name, parent_children_map, companies):
+	"""Apply opening/closing netting for parent (group) accounts after accumulation."""
 	for d in accounts:
-		if d.account_key in accounts_by_name and accounts_by_name.get(d.account_key):
-			account = accounts_by_name[d.account_key]
+		if parent_children_map.get(d.get("account_key") or d.get("name")):
+			root_type = d.get("root_type", "")
 			for company in companies:
-				# Net opening
-				opening_net = account.get(company + "_opening_debit", 0.0) - account.get(company + "_opening_credit", 0.0)
-				if opening_net > 0:
-					account[company + "_opening_debit"] = opening_net
-					account[company + "_opening_credit"] = 0.0
-				else:
-					account[company + "_opening_debit"] = 0.0
-					account[company + "_opening_credit"] = abs(opening_net)
-
-				# Net closing
-				closing_debit = account.get(company + "_opening_debit", 0.0) + account.get(company + "_debit", 0.0)
-				closing_credit = account.get(company + "_opening_credit", 0.0) + account.get(company + "_credit", 0.0)
-				closing_net = closing_debit - closing_credit
-				if closing_net > 0:
-					account[company + "_closing_debit"] = closing_net
-					account[company + "_closing_credit"] = 0.0
-				else:
-					account[company + "_closing_debit"] = 0.0
-					account[company + "_closing_credit"] = abs(closing_net)
+				_apply_opening_closing_netting(d, company, root_type)
 
 
-def prepare_trial_balance_data(accounts, filters, parent_children_map, companies, company_currency):
-	"""Prepare data rows (same pattern as prepare_data)."""
+def prepare_trial_balance_data(accounts, filters, parent_children_map, display_companies, company_currency):
+	"""Prepare data rows for trial balance."""
 	data = []
 
 	for d in accounts:
@@ -545,7 +581,7 @@ def prepare_trial_balance_data(accounts, filters, parent_children_map, companies
 			"currency": company_currency,
 		})
 
-		for company in companies:
+		for company in display_companies:
 			for field in value_fields:
 				company_field = company + "_" + field
 				row[company_field] = flt(d.get(company_field, 0.0), 3)
@@ -558,8 +594,8 @@ def prepare_trial_balance_data(accounts, filters, parent_children_map, companies
 	return data
 
 
-def calculate_trial_balance_total_row(accounts, companies, company_currency):
-	"""Calculate total row (same pattern as add_total_row)."""
+def calculate_trial_balance_total_row(accounts, display_companies, company_currency):
+	"""Calculate total row from root accounts."""
 	total_row = {
 		"account_name": "'" + _("Total") + "'",
 		"account": "'" + _("Total") + "'",
@@ -570,36 +606,16 @@ def calculate_trial_balance_total_row(accounts, companies, company_currency):
 		"currency": company_currency,
 	}
 
-	for company in companies:
+	for company in display_companies:
 		for field in value_fields:
 			total_row[company + "_" + field] = 0.0
 
 	for d in accounts:
 		if not d.parent_account:
-			for company in companies:
+			for company in display_companies:
 				for field in value_fields:
 					company_field = company + "_" + field
 					total_row[company_field] += d.get(company_field, 0.0)
-
-	# Apply net logic on totals
-	for company in companies:
-		opening_net = total_row[company + "_opening_debit"] - total_row[company + "_opening_credit"]
-		if opening_net > 0:
-			total_row[company + "_opening_debit"] = opening_net
-			total_row[company + "_opening_credit"] = 0.0
-		else:
-			total_row[company + "_opening_debit"] = 0.0
-			total_row[company + "_opening_credit"] = abs(opening_net)
-
-		closing_debit = total_row[company + "_opening_debit"] + total_row[company + "_debit"]
-		closing_credit = total_row[company + "_opening_credit"] + total_row[company + "_credit"]
-		closing_net = closing_debit - closing_credit
-		if closing_net > 0:
-			total_row[company + "_closing_debit"] = closing_net
-			total_row[company + "_closing_credit"] = 0.0
-		else:
-			total_row[company + "_closing_debit"] = 0.0
-			total_row[company + "_closing_credit"] = abs(closing_net)
 
 	return total_row
 

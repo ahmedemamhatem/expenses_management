@@ -1,6 +1,8 @@
 frappe.ui.form.on("Loan Application", {
     refresh: function(frm) {
-        if (frm.doc.applicant_type === "Employee" && frm.doc.applicant) {
+        if (frm.doc.applicant_type === "Employee"
+            && frm.doc.applicant
+            && (frappe.user.has_role('System Manager') || frappe.user.has_role('CEO'))) {
             frm.add_custom_button(__('تحليل القروض'), function() {
                 show_loans_analysis(frm);
             }).addClass('btn-info');
