@@ -489,13 +489,11 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
         if cl.customer not in customer_credit_limits and flt(cl.credit_limit) > 0:
             customer_credit_limits[cl.customer] = flt(cl.credit_limit)
 
-    # All-time totals + due amounts (excluding returns and credit note issued)
-    all_time_data = frappe.db.sql("""
+    # Balance and due amounts (all-time, not filtered by date)
+    balance_data = frappe.db.sql("""
         SELECT
             si.customer,
-            COALESCE(SUM(si.base_net_total), 0) as all_time_sales,
             COALESCE(SUM(si.outstanding_amount), 0) as total_balance,
-            COUNT(*) as all_time_invoice_count,
             COALESCE(SUM(CASE WHEN si.outstanding_amount > 0 AND si.due_date <= CURDATE() THEN si.outstanding_amount ELSE 0 END), 0) as total_due
         FROM `tabSales Invoice` si
         WHERE si.docstatus = 1
@@ -506,28 +504,65 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
         GROUP BY si.customer
     """, {"company": company, "customers": customer_list}, as_dict=1)
 
-    all_time_map = {d.customer: d for d in all_time_data}
+    balance_map = {d.customer: d for d in balance_data}
 
-    # All-time revenue (stock items: SLE/Bin, non-stock items: last purchase invoice) - excluding returns and credit note issued
+    # Credit-days period sales and revenue per customer
+    # Group customers by their credit_days to batch queries efficiently
+    # Default to 60 days for customers without explicit credit_days
+    DEFAULT_CREDIT_DAYS = 60
+    credit_days_groups = defaultdict(list)
+    for cust in customer_list:
+        days = customer_credit_days.get(cust, DEFAULT_CREDIT_DAYS)
+        credit_days_groups[days].append(cust)
+
     cost_subquery = get_cost_subquery()
-    all_time_revenue = frappe.db.sql(f"""
-        SELECT
-            si.customer,
-            COALESCE(SUM(sii.base_net_amount), 0) as net_sales,
-            COALESCE(SUM(sii.stock_qty * ({cost_subquery})), 0) as cost_of_goods,
-            COALESCE(SUM(sii.qty), 0) as total_qty
-        FROM `tabSales Invoice Item` sii
-        INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
-        LEFT JOIN `tabItem` item ON item.name = sii.item_code
-        WHERE si.docstatus = 1
-        AND si.is_return = 0
-        AND si.status != 'Credit Note Issued'
-        AND si.company = %(company)s
-        AND si.customer IN %(customers)s
-        GROUP BY si.customer
-    """, {"company": company, "customers": customer_list}, as_dict=1)
+    credit_days_sales_map = {}  # {customer: {sales, invoice_count}}
+    credit_days_revenue_map = {}  # {customer: {net_sales, cost_of_goods, total_qty}}
 
-    all_time_revenue_map = {d.customer: d for d in all_time_revenue}
+    for days, custs in credit_days_groups.items():
+        custs_tuple = tuple(custs)
+        cd_params = {"company": company, "customers": custs_tuple, "credit_days": cint(days)}
+
+        # Sales totals for credit_days period
+        cd_sales = frappe.db.sql("""
+            SELECT
+                si.customer,
+                COALESCE(SUM(si.base_net_total), 0) as credit_days_sales,
+                COUNT(*) as credit_days_invoice_count
+            FROM `tabSales Invoice` si
+            WHERE si.docstatus = 1
+            AND si.is_return = 0
+            AND si.status != 'Credit Note Issued'
+            AND si.company = %(company)s
+            AND si.customer IN %(customers)s
+            AND si.posting_date >= DATE_SUB(CURDATE(), INTERVAL %(credit_days)s DAY)
+            GROUP BY si.customer
+        """, cd_params, as_dict=1)
+
+        for d in cd_sales:
+            credit_days_sales_map[d.customer] = d
+
+        # Revenue for credit_days period
+        cd_revenue = frappe.db.sql(f"""
+            SELECT
+                si.customer,
+                COALESCE(SUM(sii.base_net_amount), 0) as net_sales,
+                COALESCE(SUM(sii.stock_qty * ({cost_subquery})), 0) as cost_of_goods,
+                COALESCE(SUM(sii.qty), 0) as total_qty
+            FROM `tabSales Invoice Item` sii
+            INNER JOIN `tabSales Invoice` si ON si.name = sii.parent
+            LEFT JOIN `tabItem` item ON item.name = sii.item_code
+            WHERE si.docstatus = 1
+            AND si.is_return = 0
+            AND si.status != 'Credit Note Issued'
+            AND si.company = %(company)s
+            AND si.customer IN %(customers)s
+            AND si.posting_date >= DATE_SUB(CURDATE(), INTERVAL %(credit_days)s DAY)
+            GROUP BY si.customer
+        """, cd_params, as_dict=1)
+
+        for d in cd_revenue:
+            credit_days_revenue_map[d.customer] = d
 
     # Period revenue (stock items: SLE/Bin, non-stock items: last purchase invoice) - excluding returns and credit note issued
     period_revenue = frappe.db.sql(f"""
@@ -652,13 +687,16 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
     for pd in period_data:
         cust = pd.customer
 
-        at = all_time_map.get(cust, {})
-        all_time_sales = flt(at.get("all_time_sales", 0))
-
-        atr = all_time_revenue_map.get(cust, {})
+        bal = balance_map.get(cust, {})
+        cd_sales = credit_days_sales_map.get(cust, {})
+        cd_rev = credit_days_revenue_map.get(cust, {})
         pr = period_revenue_map.get(cust, {})
 
-        all_time_revenue_value = flt(atr.get("net_sales", 0)) - flt(atr.get("cost_of_goods", 0))
+        credit_days_sales = flt(cd_sales.get("credit_days_sales", 0))
+        credit_days_invoice_count = cint(cd_sales.get("credit_days_invoice_count", 0))
+        credit_days_revenue = flt(cd_rev.get("net_sales", 0)) - flt(cd_rev.get("cost_of_goods", 0))
+        credit_days_total_qty = flt(cd_rev.get("total_qty", 0))
+
         period_revenue_value = flt(pr.get("net_sales", 0)) - flt(pr.get("cost_of_goods", 0))
 
         top_groups = top_group_map.get(cust, [])
@@ -676,9 +714,9 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
         unique_branches = list(set(item.get("invoice_branch") for item in cust_items if item.get("invoice_branch")))
         unique_creators = list(set(item.get("invoice_creator") for item in cust_items if item.get("invoice_creator")))
 
-        credit_days = customer_credit_days.get(cust, 0)
+        credit_days = customer_credit_days.get(cust, DEFAULT_CREDIT_DAYS)
         credit_limit = customer_credit_limits.get(cust, 0)
-        total_balance = flt(at.get("total_balance", 0))
+        total_balance = flt(bal.get("total_balance", 0))
         credit_remaining = max(0, credit_limit - total_balance)
 
         result.append({
@@ -687,18 +725,18 @@ def get_customers_analysis(company, from_date, to_date, values, extra_where, cus
             "credit_limit": credit_limit,
             "credit_remaining": credit_remaining,
             "credit_days": credit_days,
-            "credit_days_purchases": 0,
-            "credit_days_profit": 0,
-            "credit_days_invoice_count": 0,
-            "credit_days_total_qty": 0,
-            "total_purchase_all_time": all_time_sales,
+            "credit_days_purchases": credit_days_sales,
+            "credit_days_profit": credit_days_revenue,
+            "credit_days_invoice_count": credit_days_invoice_count,
+            "credit_days_total_qty": credit_days_total_qty,
+            "total_purchase_all_time": credit_days_sales,
             "total_purchase_period": flt(pd.period_sales),
             "total_balance": total_balance,
-            "total_due": flt(at.get("total_due", 0)),
-            "revenue_all_time": all_time_revenue_value,
+            "total_due": flt(bal.get("total_due", 0)),
+            "revenue_all_time": credit_days_revenue,
             "revenue_period": period_revenue_value,
-            "invoice_count_all_time": cint(at.get("all_time_invoice_count", 0)),
-            "total_qty_all_time": flt(atr.get("total_qty", 0)),
+            "invoice_count_all_time": credit_days_invoice_count,
+            "total_qty_all_time": credit_days_total_qty,
             "invoice_count_period": cint(pd.period_invoice_count),
             "top_item_group": top_group.get("item_group", ""),
             "top_group_amount": flt(top_group.get("group_amount", 0)),

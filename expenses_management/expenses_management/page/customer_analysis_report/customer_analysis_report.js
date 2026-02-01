@@ -1100,14 +1100,7 @@ class CustomerAnalysisReport {
 	}
 
 	render_customer_card(c, idx) {
-		let dataDays = 0;
-		if (c.credit_days && c.credit_days > 0) {
-			dataDays = c.credit_days;
-		} else if (c.first_invoice_date) {
-			const firstDate = new Date(c.first_invoice_date);
-			const today = new Date();
-			dataDays = Math.ceil((today - firstDate) / (1000 * 60 * 60 * 24));
-		}
+		let dataDays = c.credit_days || 60;
 
 		return `
 			<div class="customer-card" style="animation-delay: ${idx * 0.05}s" data-customer-name="${c.customer || ''} - ${c.customer_name || ''}">
@@ -1165,83 +1158,43 @@ class CustomerAnalysisReport {
 	render_items_table(items) {
 		if (!items || items.length === 0) return `<div class="empty-box" style="padding:30px;"><p>لا توجد أصناف</p></div>`;
 
-		// Group items by invoice_id to calculate per-invoice totals
-		const invoiceGroups = {};
-		const invoiceOrder = [];
-		items.forEach(i => {
-			const invId = i.invoice_id || '';
-			if (!invoiceGroups[invId]) {
-				invoiceGroups[invId] = { items: [], total_amount: 0, cost_of_goods: 0, revenue: 0, weight_in_tons: 0, grand_total: i.invoice_grand_total || 0 };
-				invoiceOrder.push(invId);
-			}
-			invoiceGroups[invId].items.push(i);
-			invoiceGroups[invId].total_amount += (i.total_amount || 0);
-			invoiceGroups[invId].cost_of_goods += (i.cost_of_goods || 0);
-			invoiceGroups[invId].revenue += (i.revenue || 0);
-			invoiceGroups[invId].weight_in_tons += (i.weight_in_tons || 0);
-		});
+		let rows = items.map(i => {
+			const whStk = (i.warehouse_stock || 0) > 100 ? 'hi' : ((i.warehouse_stock || 0) > 20 ? 'md' : 'lo');
+			const cityStk = (i.city_stock || 0) > 100 ? 'hi' : ((i.city_stock || 0) > 20 ? 'md' : 'lo');
+			const revCls = (i.revenue || 0) >= 0 ? 'val-pos' : 'val-neg';
+			const invoiceRate = i.total_amount && i.qty ? (i.total_amount / i.qty) : 0;
+			const profitPct = i.total_amount && i.total_amount > 0 ? ((i.revenue || 0) / i.total_amount * 100) : 0;
+			const profitPctCls = profitPct >= 0 ? 'pct-pos' : 'pct-neg';
 
-		const hasMultipleInvoices = invoiceOrder.length > 1;
-
-		let rows = '';
-		invoiceOrder.forEach(invId => {
-			const group = invoiceGroups[invId];
-			group.items.forEach(i => {
-				const whStk = (i.warehouse_stock || 0) > 100 ? 'hi' : ((i.warehouse_stock || 0) > 20 ? 'md' : 'lo');
-				const cityStk = (i.city_stock || 0) > 100 ? 'hi' : ((i.city_stock || 0) > 20 ? 'md' : 'lo');
-				const revCls = (i.revenue || 0) >= 0 ? 'val-pos' : 'val-neg';
-				const invoiceRate = i.total_amount && i.qty ? (i.total_amount / i.qty) : 0;
-				const profitPct = i.total_amount && i.total_amount > 0 ? ((i.revenue || 0) / i.total_amount * 100) : 0;
-				const profitPctCls = profitPct >= 0 ? 'pct-pos' : 'pct-neg';
-
-				rows += `
-					<tr>
-						<td><a href="/app/sales-invoice/${i.invoice_id}" class="inv-link" target="_blank">${i.invoice_id || ''}</a></td>
-						<td class="date-cell">${i.posting_date || ''}</td>
-						<td><div class="item-code">${i.item_code || ''}</div><div class="item-name">${i.item_name || ''}</div></td>
-						<td><div class="qty-cell"><span class="qty-main">${this.num(i.qty, 2)}</span><span class="qty-uom">${i.invoice_uom || ''}</span></div></td>
-						<td class="weight-cell">${this.num(i.weight_in_tons, 3)} طن</td>
-						<td><div class="rate-cell"><span class="rate-invoice">${this.fmt(invoiceRate)}/${i.invoice_uom || ''}</span><span class="rate-ton">${this.fmt(i.rate_per_ton)}/طن</span></div></td>
-						<td class="amount-cell">${this.fmt(i.total_amount)}</td>
-						<td class="cost-cell">${this.fmt(i.cost_of_goods)}</td>
-						<td><div class="profit-cell"><span class="${revCls}">${this.fmt(i.revenue)}</span><span class="profit-pct ${profitPctCls}">${this.num(profitPct, 1)}%</span></div></td>
-						<td>
-							<div class="stock-cell">
-								<div class="stock-row warehouse-row" title="${i.item_warehouse || ''}">
-									<span class="stock-dot ${whStk}"></span>
-									<span class="stock-label">${i.item_warehouse_name || '-'}</span>
-									<span class="stock-val">${this.num(i.warehouse_stock, 0)}</span>
-								</div>
-								<div class="stock-row city-row" title="${i.city_warehouse || ''}">
-									<span class="stock-dot ${cityStk}"></span>
-									<span class="stock-label">${i.city_warehouse_name || '-'}</span>
-									<span class="stock-val">${this.num(i.city_stock, 0)}</span>
-								</div>
+			return `
+				<tr>
+					<td><a href="/app/sales-invoice/${i.invoice_id}" class="inv-link" target="_blank">${i.invoice_id || ''}</a></td>
+					<td class="date-cell">${i.posting_date || ''}</td>
+					<td><div class="item-code">${i.item_code || ''}</div><div class="item-name">${i.item_name || ''}</div></td>
+					<td><div class="qty-cell"><span class="qty-main">${this.num(i.qty, 2)}</span><span class="qty-uom">${i.invoice_uom || ''}</span></div></td>
+					<td class="weight-cell">${this.num(i.weight_in_tons, 3)} طن</td>
+					<td><div class="rate-cell"><span class="rate-invoice">${this.fmt(invoiceRate)}/${i.invoice_uom || ''}</span><span class="rate-ton">${this.fmt(i.rate_per_ton)}/طن</span></div></td>
+					<td class="amount-cell">${this.fmt(i.total_amount)}</td>
+					<td class="cost-cell">${this.fmt(i.cost_of_goods)}</td>
+					<td><div class="profit-cell"><span class="${revCls}">${this.fmt(i.revenue)}</span><span class="profit-pct ${profitPctCls}">${this.num(profitPct, 1)}%</span></div></td>
+					<td>
+						<div class="stock-cell">
+							<div class="stock-row warehouse-row" title="${i.item_warehouse || ''}">
+								<span class="stock-dot ${whStk}"></span>
+								<span class="stock-label">${i.item_warehouse_name || '-'}</span>
+								<span class="stock-val">${this.num(i.warehouse_stock, 0)}</span>
 							</div>
-						</td>
-						<td><div class="branch-user-cell"><span class="branch-name">${i.invoice_branch || '-'}</span><span class="creator-name">${i.invoice_creator || '-'}</span></div></td>
-					</tr>
-				`;
-			});
-
-			// Add invoice subtotal row when there are multiple invoices
-			if (hasMultipleInvoices && group.items.length > 0) {
-				const invRevCls = group.revenue >= 0 ? 'val-pos' : 'val-neg';
-				const invProfitPct = group.total_amount > 0 ? (group.revenue / group.total_amount * 100) : 0;
-				const invProfitPctCls = invProfitPct >= 0 ? 'pct-pos' : 'pct-neg';
-				rows += `
-					<tr class="invoice-total-row" style="background:#e8e8e8; font-weight:900; border-top:2px solid #333;">
-						<td colspan="4" style="text-align:right; padding:4px 8px;">إجمالي الفاتورة ${invId}${group.grand_total ? ' | الإجمالي الشامل: ' + this.fmt(group.grand_total) : ''}</td>
-						<td>${this.num(group.weight_in_tons, 3)} طن</td>
-						<td></td>
-						<td class="amount-cell">${this.fmt(group.total_amount)}</td>
-						<td class="cost-cell">${this.fmt(group.cost_of_goods)}</td>
-						<td><div class="profit-cell"><span class="${invRevCls}">${this.fmt(group.revenue)}</span><span class="profit-pct ${invProfitPctCls}">${this.num(invProfitPct, 1)}%</span></div></td>
-						<td colspan="2"></td>
-					</tr>
-				`;
-			}
-		});
+							<div class="stock-row city-row" title="${i.city_warehouse || ''}">
+								<span class="stock-dot ${cityStk}"></span>
+								<span class="stock-label">${i.city_warehouse_name || '-'}</span>
+								<span class="stock-val">${this.num(i.city_stock, 0)}</span>
+							</div>
+						</div>
+					</td>
+					<td><div class="branch-user-cell"><span class="branch-name">${i.invoice_branch || '-'}</span><span class="creator-name">${i.invoice_creator || '-'}</span></div></td>
+				</tr>
+			`;
+		}).join('');
 
 		return `
 			<div class="items-scroll">
@@ -1373,60 +1326,22 @@ class CustomerAnalysisReport {
 			`;
 
 			if (c.items && c.items.length > 0) {
-				// Group by invoice for subtotals in PDF
-				const pdfInvGroups = {};
-				const pdfInvOrder = [];
-				c.items.forEach(i => {
-					const invId = i.invoice_id || '';
-					if (!pdfInvGroups[invId]) {
-						pdfInvGroups[invId] = { items: [], total_amount: 0, cost_of_goods: 0, revenue: 0, weight_in_tons: 0, grand_total: i.invoice_grand_total || 0 };
-						pdfInvOrder.push(invId);
-					}
-					pdfInvGroups[invId].items.push(i);
-					pdfInvGroups[invId].total_amount += (i.total_amount || 0);
-					pdfInvGroups[invId].cost_of_goods += (i.cost_of_goods || 0);
-					pdfInvGroups[invId].revenue += (i.revenue || 0);
-					pdfInvGroups[invId].weight_in_tons += (i.weight_in_tons || 0);
-				});
-
-				const pdfHasMultiple = pdfInvOrder.length > 1;
-				let pdfIdx = 0;
-				pdfInvOrder.forEach(invId => {
-					const grp = pdfInvGroups[invId];
-					grp.items.forEach(i => {
-						pdfIdx++;
-						const invoiceRate = i.qty && i.qty !== 0 ? (i.total_amount / i.qty) : 0;
-						const profitPct = i.total_amount && i.total_amount !== 0 ? ((i.revenue / i.total_amount) * 100) : 0;
-						html += `
-							<tr style="font-size:10px;">
-								<td class="idx">${pdfIdx}</td>
-								<td style="text-align: right;"><div>${i.item_code || ''} - ${i.item_name || ''}</div><div style="font-size:9px; color:#555;">${i.invoice_id || ''}</div></td>
-								<td>${this.num(i.qty, 2)} ${i.invoice_uom || ''}</td>
-								<td>${this.num(i.weight_in_tons, 3)}</td>
-								<td><div>${this.fmt(i.rate_per_ton)}/طن</div><div style="font-size:9px; color:#555;">${this.fmt(invoiceRate)}/${i.invoice_uom || ''}</div></td>
-								<td>${this.fmt(i.total_amount)}</td>
-								<td>${this.fmt(i.cost_of_goods)}</td>
-								<td><span style="font-weight:900;">${this.fmt(i.revenue)}</span> <span class="pct-badge ${profitPct >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num(profitPct, 1)}%</span></td>
-								<td>${i.invoice_branch || '-'}</td>
-							</tr>
-						`;
-					});
-					if (pdfHasMultiple) {
-						const grpProfitPct = grp.total_amount > 0 ? (grp.revenue / grp.total_amount * 100) : 0;
-						html += `
-							<tr style="font-size:10px; background:#e0e0e0; font-weight:900; border-top:2px solid #333;">
-								<td></td>
-								<td style="text-align:right;">إجمالي ${invId}${grp.grand_total ? ' | الشامل: ' + this.fmt(grp.grand_total) : ''}</td>
-								<td></td>
-								<td>${this.num(grp.weight_in_tons, 3)}</td>
-								<td></td>
-								<td>${this.fmt(grp.total_amount)}</td>
-								<td>${this.fmt(grp.cost_of_goods)}</td>
-								<td>${this.fmt(grp.revenue)} <span class="pct-badge ${grpProfitPct >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num(grpProfitPct, 1)}%</span></td>
-								<td></td>
-							</tr>
-						`;
-					}
+				c.items.forEach((i, idx) => {
+					const invoiceRate = i.qty && i.qty !== 0 ? (i.total_amount / i.qty) : 0;
+					const profitPct = i.total_amount && i.total_amount !== 0 ? ((i.revenue / i.total_amount) * 100) : 0;
+					html += `
+						<tr style="font-size:10px;">
+							<td class="idx">${idx + 1}</td>
+							<td style="text-align: right;"><div>${i.item_code || ''} - ${i.item_name || ''}</div><div style="font-size:9px; color:#555;">${i.invoice_id || ''}</div></td>
+							<td>${this.num(i.qty, 2)} ${i.invoice_uom || ''}</td>
+							<td>${this.num(i.weight_in_tons, 3)}</td>
+							<td><div>${this.fmt(i.rate_per_ton)}/طن</div><div style="font-size:9px; color:#555;">${this.fmt(invoiceRate)}/${i.invoice_uom || ''}</div></td>
+							<td>${this.fmt(i.total_amount)}</td>
+							<td>${this.fmt(i.cost_of_goods)}</td>
+							<td><span style="font-weight:900;">${this.fmt(i.revenue)}</span> <span class="pct-badge ${profitPct >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num(profitPct, 1)}%</span></td>
+							<td>${i.invoice_branch || '-'}</td>
+						</tr>
+					`;
 				});
 			}
 
