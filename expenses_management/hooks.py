@@ -72,7 +72,9 @@ app_include_js = [
 # include js in doctype views
 doctype_js = {
     "Sales Invoice": "public/js/sales_invoice.js",
-    "Customer": "public/js/customer_ledger.js"
+    "Customer": "public/js/customer_ledger.js",
+    "Payment Entry": "public/js/payment_entry.js",
+    "Loan Application": "public/js/loan_application.js"
 }
 
 # doctype_js handles Customer and Sales Invoice JS injection
