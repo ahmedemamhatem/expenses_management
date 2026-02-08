@@ -783,6 +783,78 @@ class CustomerAnalysisReport {
 				.profit-pct.pct-pos { background: linear-gradient(135deg, rgba(16, 185, 129, 0.3), rgba(16, 185, 129, 0.15)); color: #047857; border: 2px solid rgba(16, 185, 129, 0.5); }
 				.profit-pct.pct-neg { background: linear-gradient(135deg, rgba(239, 68, 68, 0.3), rgba(239, 68, 68, 0.15)); color: #b91c1c; border: 2px solid rgba(239, 68, 68, 0.5); }
 
+				/* ===== INVOICES DRILL-DOWN TABLE ===== */
+				.invoices-scroll { max-height: 500px; overflow-y: auto; overflow-x: auto; }
+				.invoices-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+				.invoices-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 5px; }
+				.invoices-scroll::-webkit-scrollbar-thumb { background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 5px; }
+				.invoices-scroll::-webkit-scrollbar-thumb:hover { background: linear-gradient(135deg, #4f46e5, #7c3aed); }
+				.invoices-tbl { width: 100%; border-collapse: collapse; font-size: 16px; }
+				.invoices-tbl th {
+					background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+					color: #fff;
+					font-weight: 900;
+					padding: 14px 12px;
+					text-align: center;
+					font-size: 15px;
+					text-transform: uppercase;
+					letter-spacing: 0.5px;
+					position: sticky;
+					top: 0;
+					z-index: 10;
+					border-bottom: 4px solid #6366f1;
+				}
+				.invoices-tbl td { padding: 12px 10px; text-align: center; border-bottom: 1px solid #e5e7eb; font-weight: 900; color: #1e293b; font-size: 15px; }
+				.invoices-tbl tbody tr.invoice-row { transition: all 0.3s ease; cursor: pointer; }
+				.invoices-tbl tbody tr.invoice-row:nth-child(4n+1) { background: #fff; }
+				.invoices-tbl tbody tr.invoice-row:nth-child(4n+3) { background: #f8fafc; }
+				.invoices-tbl tbody tr.invoice-row:hover { background: linear-gradient(135deg, #eef2ff 0%, #faf5ff 100%); }
+				.invoices-tbl tbody tr.invoice-row.expanded { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); }
+				.invoices-tbl tbody tr.invoice-row.expanded td { color: #fff; }
+				.invoices-tbl tbody tr.invoice-row.expanded .inv-link { background: linear-gradient(135deg, #10b981, #059669); }
+				.invoices-tbl tbody tr.invoice-row.expanded .date-cell { color: #a5b4fc; }
+				.invoices-tbl tbody tr.invoice-row.expanded .weight-cell { color: #c4b5fd; }
+				.invoices-tbl tbody tr.invoice-row.expanded .amount-cell { color: #93c5fd; }
+				.invoices-tbl tbody tr.invoice-row.expanded .cost-cell { color: #fca5a5; }
+				.invoices-tbl tbody tr.invoice-row.expanded .val-pos { color: #6ee7b7 !important; }
+				.invoices-tbl tbody tr.invoice-row.expanded .val-neg { color: #fca5a5 !important; }
+				.invoices-tbl tbody tr.invoice-row.expanded .profit-pct.pct-pos { background: rgba(16, 185, 129, 0.3); color: #6ee7b7; border-color: rgba(110, 231, 183, 0.5); }
+				.invoices-tbl tbody tr.invoice-row.expanded .profit-pct.pct-neg { background: rgba(239, 68, 68, 0.3); color: #fca5a5; border-color: rgba(252, 165, 165, 0.5); }
+				.invoices-tbl tbody tr.invoice-row.expanded .branch-name { background: rgba(139, 92, 246, 0.3); color: #c4b5fd; }
+				.invoices-tbl tbody tr.invoice-row.expanded .creator-name { color: #94a3b8; }
+				.invoices-tbl tbody tr.invoice-row.expanded .items-count-badge { background: rgba(16, 185, 129, 0.3); color: #6ee7b7; }
+				.expand-cell { width: 40px; }
+				.expand-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; transition: all 0.3s ease; }
+				.expand-icon i { font-size: 14px; transition: transform 0.3s ease; }
+				.invoice-row.expanded .expand-icon { background: linear-gradient(135deg, #10b981, #059669); }
+				.invoice-row.expanded .expand-icon i { transform: rotate(45deg); }
+				.items-count-badge { background: linear-gradient(135deg, #d1fae5, #a7f3d0); color: #065f46; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 800; }
+				.invoice-items-row { background: #f8fafc; }
+				.invoice-items-container { padding: 0 !important; background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); }
+				.invoice-items-tbl { width: 100%; border-collapse: collapse; font-size: 14px; margin: 0; }
+				.invoice-items-tbl th {
+					background: linear-gradient(135deg, #475569 0%, #334155 100%);
+					color: #fff;
+					font-weight: 800;
+					padding: 10px 8px;
+					text-align: center;
+					font-size: 13px;
+					text-transform: uppercase;
+					letter-spacing: 0.3px;
+				}
+				.invoice-items-tbl td { padding: 10px 8px; text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; color: #1e293b; font-size: 14px; background: #fff; }
+				.invoice-items-tbl tbody tr:nth-child(even) td { background: #f8fafc; }
+				.invoice-items-tbl tbody tr:hover td { background: linear-gradient(135deg, #eef2ff 0%, #faf5ff 100%); }
+				.invoice-items-tbl .item-code { font-size: 14px; }
+				.invoice-items-tbl .item-name { font-size: 12px; }
+				.invoice-items-tbl .qty-main { font-size: 15px; }
+				.invoice-items-tbl .weight-cell { font-size: 15px; }
+				.invoice-items-tbl .amount-cell { font-size: 15px; }
+				.invoice-items-tbl .cost-cell { font-size: 15px; }
+				.invoice-items-tbl .rate-invoice { font-size: 13px; padding: 4px 10px; }
+				.invoice-items-tbl .rate-ton { font-size: 13px; padding: 4px 10px; }
+				.invoice-items-tbl .profit-pct { font-size: 13px; padding: 4px 10px; }
+
 				/* ===== EMPTY & LOADING ===== */
 				.empty-box { text-align: center; padding: 100px 20px; animation: fadeIn 0.5s ease-out; }
 				.empty-box h4 { font-size: 24px; font-weight: 700; color: #6366f1; margin-bottom: 12px; }
@@ -1035,9 +1107,29 @@ class CustomerAnalysisReport {
 		let html = this.render_summary_header(data);
 		sortedCustomers.forEach((c, idx) => { html += this.render_customer_card(c, idx); });
 		$('#report-content').html(html);
+
+		// Customer panel toggle
 		$('.items-toggle').off('click').on('click', function() {
 			$(this).toggleClass('open');
 			$(this).next('.items-panel').toggleClass('show');
+		});
+
+		// Invoice row click to expand/collapse items
+		$('.invoice-row').off('click').on('click', function(e) {
+			// Don't toggle if clicking on the invoice link
+			if ($(e.target).closest('.inv-link').length) return;
+
+			const $row = $(this);
+			const $itemsRow = $row.next('.invoice-items-row');
+
+			// Toggle expanded state
+			$row.toggleClass('expanded');
+
+			if ($row.hasClass('expanded')) {
+				$itemsRow.show();
+			} else {
+				$itemsRow.hide();
+			}
 		});
 	}
 
@@ -1135,11 +1227,11 @@ class CustomerAnalysisReport {
 					<div class="metric-box"><div class="metric-lbl">أرباح الفترة <span class="days-badge">${dataDays > 0 ? dataDays + ' يوم' : '60 يوم'}</span></div><div class="metric-val ${(c.revenue_all_time || 0) >= 0 ? 'pos' : 'neg'}">${this.fmt(c.revenue_all_time)}${c.total_purchase_all_time > 0 ? ` <span class="metric-pct ${(c.revenue_all_time || 0) >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num((c.revenue_all_time / c.total_purchase_all_time) * 100, 1)}%</span>` : ''}</div></div>
 					<div class="metric-box"><div class="metric-lbl">مبيعات الفترة <span class="days-badge period">${this.periodDays} يوم</span></div><div class="metric-val">${this.fmt(c.total_purchase_period)}</div></div>
 					<div class="metric-box"><div class="metric-lbl">أرباح الفترة <span class="days-badge period">${this.periodDays} يوم</span></div><div class="metric-val ${(c.revenue_period || 0) >= 0 ? 'pos' : 'neg'}">${this.fmt(c.revenue_period)}${c.total_purchase_period > 0 ? ` <span class="metric-pct ${(c.revenue_period || 0) >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num((c.revenue_period / c.total_purchase_period) * 100, 1)}%</span>` : ''}</div></div>
-					<div class="metric-box balance-credit-box"><div class="metric-val-dual"><div class="dual-row"><span class="dual-lbl">الرصيد</span><span class="balance-val">${this.fmt(c.total_balance)}</span></div><div class="dual-row overdue-row ${(c.total_due || 0) > 0 ? 'has-overdue' : ''}"><span class="dual-lbl">المستحق</span><span class="overdue-val">${this.fmt(c.total_due)}</span></div><div class="dual-row credit-row ${Math.max(0, (c.credit_limit || 0) - (c.total_due || 0)) <= 0 ? 'zero-credit' : ''}"><span class="dual-lbl">المتبقي من الائتمان</span><span class="credit-remain-val">${this.fmt(Math.max(0, (c.credit_limit || 0) - (c.total_due || 0)))}</span></div></div></div>
+					<div class="metric-box balance-credit-box"><div class="metric-val-dual"><div class="dual-row"><span class="dual-lbl">الرصيد</span><span class="balance-val">${this.fmt(c.total_balance)}</span></div><div class="dual-row overdue-row ${(c.total_due || 0) > 0 ? 'has-overdue' : ''}"><span class="dual-lbl">المستحق</span><span class="overdue-val">${this.fmt(c.total_due)}</span></div><div class="dual-row credit-row ${Math.max(0, (c.credit_limit || 0) - (c.total_balance || 0)) <= 0 ? 'zero-credit' : ''}"><span class="dual-lbl">المتبقي من الائتمان</span><span class="credit-remain-val">${this.fmt(Math.max(0, (c.credit_limit || 0) - (c.total_balance || 0)))}</span></div></div></div>
 					<div class="metric-box returns-box"><div class="metric-lbl">المرتجعات <span class="days-badge">${dataDays > 0 ? dataDays + ' يوم' : '60 يوم'}</span></div><div class="metric-val-with-count"><span class="neg">${this.fmt(c.total_returns_all_time)}</span><span class="return-count">${c.return_count_all_time || 0} فاتورة</span></div></div>
 				</div>
 				<div class="items-wrapper">
-					<div class="items-toggle">
+					<div class="items-toggle" data-customer="${c.customer}">
 						<div class="items-title">
 							<span class="toggle-label">تفاصيل الفواتير</span>
 							<span class="toggle-counts">
@@ -1149,7 +1241,7 @@ class CustomerAnalysisReport {
 						</div>
 						<i class="fa fa-chevron-down toggle-icon"></i>
 					</div>
-					<div class="items-panel">${this.render_items_table(c.items)}</div>
+					<div class="items-panel">${this.render_invoices_list(c.items, c.customer)}</div>
 				</div>
 			</div>
 		`;
@@ -1203,6 +1295,124 @@ class CustomerAnalysisReport {
 					<tbody>${rows}</tbody>
 				</table>
 			</div>
+		`;
+	}
+
+	render_invoices_list(items, customer) {
+		if (!items || items.length === 0) return `<div class="empty-box" style="padding:30px;"><p>لا توجد فواتير</p></div>`;
+
+		// Group items by invoice
+		const invoicesMap = {};
+		items.forEach(item => {
+			const invId = item.invoice_id;
+			if (!invoicesMap[invId]) {
+				invoicesMap[invId] = {
+					invoice_id: invId,
+					posting_date: item.posting_date,
+					invoice_branch: item.invoice_branch,
+					invoice_creator: item.invoice_creator,
+					invoice_grand_total: item.invoice_grand_total || 0,
+					items: [],
+					total_amount: 0,
+					total_cost: 0,
+					total_revenue: 0,
+					total_weight_tons: 0,
+					items_count: 0
+				};
+			}
+			invoicesMap[invId].items.push(item);
+			invoicesMap[invId].total_amount += item.total_amount || 0;
+			invoicesMap[invId].total_cost += item.cost_of_goods || 0;
+			invoicesMap[invId].total_revenue += item.revenue || 0;
+			invoicesMap[invId].total_weight_tons += item.weight_in_tons || 0;
+			invoicesMap[invId].items_count++;
+		});
+
+		// Convert to array and sort by date descending
+		const invoices = Object.values(invoicesMap).sort((a, b) => {
+			return new Date(b.posting_date) - new Date(a.posting_date);
+		});
+
+		let invoiceRows = invoices.map(inv => {
+			const revCls = (inv.total_revenue || 0) >= 0 ? 'val-pos' : 'val-neg';
+			const profitPct = inv.total_amount > 0 ? ((inv.total_revenue / inv.total_amount) * 100) : 0;
+			const profitPctCls = profitPct >= 0 ? 'pct-pos' : 'pct-neg';
+
+			return `
+				<tr class="invoice-row" data-invoice="${inv.invoice_id}" data-customer="${customer}">
+					<td class="expand-cell">
+						<span class="expand-icon"><i class="fa fa-plus-circle"></i></span>
+					</td>
+					<td><a href="/app/sales-invoice/${inv.invoice_id}" class="inv-link" target="_blank">${inv.invoice_id || ''}</a></td>
+					<td class="date-cell">${inv.posting_date || ''}</td>
+					<td><span class="items-count-badge">${inv.items_count} صنف</span></td>
+					<td class="weight-cell">${this.num(inv.total_weight_tons, 3)} طن</td>
+					<td class="amount-cell">${this.fmt(inv.invoice_grand_total)}</td>
+					<td class="cost-cell">${this.fmt(inv.total_cost)}</td>
+					<td><div class="profit-cell"><span class="${revCls}">${this.fmt(inv.total_revenue)}</span><span class="profit-pct ${profitPctCls}">${this.num(profitPct, 1)}%</span></div></td>
+					<td><div class="branch-user-cell"><span class="branch-name">${inv.invoice_branch || '-'}</span><span class="creator-name">${inv.invoice_creator || '-'}</span></div></td>
+				</tr>
+				<tr class="invoice-items-row" data-invoice="${inv.invoice_id}" style="display: none;">
+					<td colspan="9" class="invoice-items-container">
+						${this.render_invoice_items(inv.items)}
+					</td>
+				</tr>
+			`;
+		}).join('');
+
+		return `
+			<div class="invoices-scroll">
+				<table class="invoices-tbl">
+					<thead><tr><th style="width:40px;"></th><th>الفاتورة</th><th>التاريخ</th><th>الأصناف</th><th>الوزن</th><th>المبلغ</th><th>التكلفة</th><th>الربح</th><th>الفرع / المستخدم</th></tr></thead>
+					<tbody>${invoiceRows}</tbody>
+				</table>
+			</div>
+		`;
+	}
+
+	render_invoice_items(items) {
+		if (!items || items.length === 0) return `<div class="empty-box" style="padding:15px;"><p>لا توجد أصناف</p></div>`;
+
+		let rows = items.map(i => {
+			const whStk = (i.warehouse_stock || 0) > 100 ? 'hi' : ((i.warehouse_stock || 0) > 20 ? 'md' : 'lo');
+			const cityStk = (i.city_stock || 0) > 100 ? 'hi' : ((i.city_stock || 0) > 20 ? 'md' : 'lo');
+			const revCls = (i.revenue || 0) >= 0 ? 'val-pos' : 'val-neg';
+			const invoiceRate = i.total_amount && i.qty ? (i.total_amount / i.qty) : 0;
+			const profitPct = i.total_amount && i.total_amount > 0 ? ((i.revenue || 0) / i.total_amount * 100) : 0;
+			const profitPctCls = profitPct >= 0 ? 'pct-pos' : 'pct-neg';
+
+			return `
+				<tr>
+					<td><div class="item-code">${i.item_code || ''}</div><div class="item-name">${i.item_name || ''}</div></td>
+					<td><div class="qty-cell"><span class="qty-main">${this.num(i.qty, 2)}</span><span class="qty-uom">${i.invoice_uom || ''}</span></div></td>
+					<td class="weight-cell">${this.num(i.weight_in_tons, 3)} طن</td>
+					<td><div class="rate-cell"><span class="rate-invoice">${this.fmt(invoiceRate)}/${i.invoice_uom || ''}</span><span class="rate-ton">${this.fmt(i.rate_per_ton)}/طن</span></div></td>
+					<td class="amount-cell">${this.fmt(i.total_amount)}</td>
+					<td class="cost-cell">${this.fmt(i.cost_of_goods)}</td>
+					<td><div class="profit-cell"><span class="${revCls}">${this.fmt(i.revenue)}</span><span class="profit-pct ${profitPctCls}">${this.num(profitPct, 1)}%</span></div></td>
+					<td>
+						<div class="stock-cell">
+							<div class="stock-row warehouse-row" title="${i.item_warehouse || ''}">
+								<span class="stock-dot ${whStk}"></span>
+								<span class="stock-label">${i.item_warehouse_name || '-'}</span>
+								<span class="stock-val">${this.num(i.warehouse_stock, 0)}</span>
+							</div>
+							<div class="stock-row city-row" title="${i.city_warehouse || ''}">
+								<span class="stock-dot ${cityStk}"></span>
+								<span class="stock-label">${i.city_warehouse_name || '-'}</span>
+								<span class="stock-val">${this.num(i.city_stock, 0)}</span>
+							</div>
+						</div>
+					</td>
+				</tr>
+			`;
+		}).join('');
+
+		return `
+			<table class="invoice-items-tbl">
+				<thead><tr><th>الصنف</th><th>الكمية</th><th>الوزن</th><th>السعر</th><th>المبلغ</th><th>التكلفة</th><th>الربح</th><th>المخزون</th></tr></thead>
+				<tbody>${rows}</tbody>
+			</table>
 		`;
 	}
 
@@ -1320,34 +1530,78 @@ class CustomerAnalysisReport {
 							<td class="cust-stat"><span class="lbl">الوزن (طن)</span><span class="val">${this.num(c.total_weight_tons, 2)}</span></td>
 						</tr>
 					</table>
-					<table class="items-table">
-						<thead><tr><th>#</th><th>الفاتورة / الصنف</th><th>الكمية</th><th>الوزن</th><th>السعر</th><th>المبلغ</th><th>التكلفة</th><th>الربح</th><th>الفرع</th></tr></thead>
-						<tbody>
 			`;
 
 			if (c.items && c.items.length > 0) {
-				c.items.forEach((i, idx) => {
-					const invoiceRate = i.qty && i.qty !== 0 ? (i.total_amount / i.qty) : 0;
-					const profitPct = i.total_amount && i.total_amount !== 0 ? ((i.revenue / i.total_amount) * 100) : 0;
+				// Group items by invoice
+				const invoicesMap = {};
+				c.items.forEach(item => {
+					const invId = item.invoice_id;
+					if (!invoicesMap[invId]) {
+						invoicesMap[invId] = {
+							invoice_id: invId,
+							posting_date: item.posting_date,
+							invoice_branch: item.invoice_branch,
+							invoice_grand_total: item.invoice_grand_total || 0,
+							items: [],
+							total_cost: 0,
+							total_revenue: 0,
+							total_weight_tons: 0
+						};
+					}
+					invoicesMap[invId].items.push(item);
+					invoicesMap[invId].total_cost += item.cost_of_goods || 0;
+					invoicesMap[invId].total_revenue += item.revenue || 0;
+					invoicesMap[invId].total_weight_tons += item.weight_in_tons || 0;
+				});
+
+				// Sort invoices by date descending
+				const invoices = Object.values(invoicesMap).sort((a, b) => new Date(b.posting_date) - new Date(a.posting_date));
+
+				invoices.forEach((inv, invIdx) => {
+					const invProfitPct = inv.invoice_grand_total > 0 ? ((inv.total_revenue / inv.invoice_grand_total) * 100) : 0;
 					html += `
-						<tr style="font-size:10px;">
-							<td class="idx">${idx + 1}</td>
-							<td style="text-align: right;"><div>${i.item_code || ''} - ${i.item_name || ''}</div><div style="font-size:9px; color:#555;">${i.invoice_id || ''}</div></td>
-							<td>${this.num(i.qty, 2)} ${i.invoice_uom || ''}</td>
-							<td>${this.num(i.weight_in_tons, 3)}</td>
-							<td><div>${this.fmt(i.rate_per_ton)}/طن</div><div style="font-size:9px; color:#555;">${this.fmt(invoiceRate)}/${i.invoice_uom || ''}</div></td>
-							<td>${this.fmt(i.total_amount)}</td>
-							<td>${this.fmt(i.cost_of_goods)}</td>
-							<td><span style="font-weight:900;">${this.fmt(i.revenue)}</span> <span class="pct-badge ${profitPct >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num(profitPct, 1)}%</span></td>
-							<td>${i.invoice_branch || '-'}</td>
-						</tr>
+						<table class="items-table" style="margin-top: ${invIdx > 0 ? '8px' : '0'};">
+							<thead>
+								<tr style="background: #c0c0c0;">
+									<th colspan="8" style="text-align: right; font-size: 13px; padding: 8px;">
+										<span style="background: #333; color: #fff; padding: 4px 10px; border-radius: 4px; margin-left: 10px;">${inv.invoice_id}</span>
+										<span style="margin-left: 15px;">التاريخ: ${inv.posting_date}</span>
+										<span style="margin-left: 15px;">المبلغ: ${this.fmt(inv.invoice_grand_total)}</span>
+										<span style="margin-left: 15px;">الربح: ${this.fmt(inv.total_revenue)} <span class="pct-badge ${invProfitPct >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num(invProfitPct, 1)}%</span></span>
+										<span style="margin-left: 15px;">الفرع: ${inv.invoice_branch || '-'}</span>
+									</th>
+								</tr>
+								<tr><th>#</th><th>الصنف</th><th>الكمية</th><th>الوزن</th><th>السعر</th><th>المبلغ</th><th>التكلفة</th><th>الربح</th></tr>
+							</thead>
+							<tbody>
+					`;
+
+					inv.items.forEach((i, idx) => {
+						const invoiceRate = i.qty && i.qty !== 0 ? (i.total_amount / i.qty) : 0;
+						const profitPct = i.total_amount && i.total_amount !== 0 ? ((i.revenue / i.total_amount) * 100) : 0;
+						html += `
+							<tr style="font-size:10px;">
+								<td class="idx">${idx + 1}</td>
+								<td style="text-align: right;">${i.item_code || ''} - ${i.item_name || ''}</td>
+								<td>${this.num(i.qty, 2)} ${i.invoice_uom || ''}</td>
+								<td>${this.num(i.weight_in_tons, 3)}</td>
+								<td><div>${this.fmt(i.rate_per_ton)}/طن</div><div style="font-size:9px; color:#555;">${this.fmt(invoiceRate)}/${i.invoice_uom || ''}</div></td>
+								<td>${this.fmt(i.total_amount)}</td>
+								<td>${this.fmt(i.cost_of_goods)}</td>
+								<td><span style="font-weight:900;">${this.fmt(i.revenue)}</span> <span class="pct-badge ${profitPct >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num(profitPct, 1)}%</span></td>
+							</tr>
+						`;
+					});
+
+					html += `
+							</tbody>
+						</table>
 					`;
 				});
 			}
 
 			html += `
-						</tbody>
-					</table>
 				</div>
 			`;
 		});
