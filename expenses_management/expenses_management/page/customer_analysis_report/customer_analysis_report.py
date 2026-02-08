@@ -187,6 +187,8 @@ def get_report_data(company, from_date=None, to_date=None, branch=None, customer
     if payment_status:
         if payment_status == "paid":
             extra_conditions.append("si.outstanding_amount = 0")
+        elif payment_status == "not_paid":
+            extra_conditions.append("si.outstanding_amount > 0")
         elif payment_status == "credit":
             extra_conditions.append("si.outstanding_amount > 0 AND si.outstanding_amount < si.grand_total")
         elif payment_status == "unpaid":
@@ -772,6 +774,7 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
             si.owner as invoice_owner,
             si.branch as invoice_branch,
             si.base_grand_total as invoice_grand_total,
+            si.outstanding_amount as invoice_outstanding_amount,
             sii.item_code,
             sii.item_name,
             sii.uom as invoice_uom,
@@ -944,6 +947,7 @@ def get_all_customer_items_batch(values, extra_where, customer_join, customer_wh
         customer_items[cust].append({
             "invoice_id": item.invoice_id,
             "invoice_grand_total": flt(item.invoice_grand_total, 2),
+            "invoice_outstanding_amount": flt(item.invoice_outstanding_amount, 2),
             "posting_date": str(item.posting_date) if item.posting_date else "",
             "invoice_creator": creator_name,
             "invoice_branch": item.invoice_branch or "",

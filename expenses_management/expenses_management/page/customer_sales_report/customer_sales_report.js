@@ -22,7 +22,8 @@ class CustomerSalesReport {
 			sales_person: '',
 			sort_by: 'total_purchase_period',
 			sort_order: 'desc',
-			use_credit_days: true
+			use_credit_days: true,
+			payment_status: ''
 		};
 
 		this.setup_page();
@@ -97,6 +98,16 @@ class CustomerSalesReport {
 				{ label: __('المنطقة'), fieldname: 'territory', fieldtype: 'Link', options: 'Territory', default: me.filters.territory },
 				{ fieldtype: 'Section Break' },
 				{ label: __('مندوب المبيعات'), fieldname: 'sales_person', fieldtype: 'Link', options: 'Sales Person', default: me.filters.sales_person },
+				{ fieldtype: 'Column Break' },
+				{
+					label: __('حالة السداد'), fieldname: 'payment_status', fieldtype: 'Select',
+					options: [
+						{ value: '', label: 'الكل' },
+						{ value: 'not_paid', label: 'غير مسددة' },
+						{ value: 'paid', label: 'مسددة' }
+					],
+					default: me.filters.payment_status
+				},
 				{ fieldtype: 'Column Break' },
 				{
 					label: __('ترتيب حسب'), fieldname: 'sort_by', fieldtype: 'Select',
@@ -674,6 +685,68 @@ class CustomerSalesReport {
 				.branch-name { font-size: 15px; font-weight: 800; color: #7c3aed; background: rgba(124, 58, 237, 0.1); padding: 4px 12px; border-radius: 6px; }
 				.creator-name { font-size: 13px; font-weight: 600; color: #64748b; }
 
+				/* ===== INVOICE GROUP ROWS ===== */
+				.invoices-scroll { max-height: 500px; overflow-y: auto; overflow-x: auto; }
+				.invoices-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+				.invoices-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 5px; }
+				.invoices-scroll::-webkit-scrollbar-thumb { background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 5px; }
+				.invoices-tbl { width: 100%; border-collapse: collapse; font-size: 16px; }
+				.invoices-tbl th {
+					background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+					color: #fff; font-weight: 900; padding: 14px 12px; text-align: center;
+					font-size: 15px; text-transform: uppercase; letter-spacing: 0.5px;
+					position: sticky; top: 0; z-index: 10; border-bottom: 4px solid #6366f1;
+				}
+				.invoices-tbl td { padding: 12px 10px; text-align: center; border-bottom: 1px solid #e5e7eb; font-weight: 900; color: #1e293b; font-size: 15px; }
+				.invoices-tbl tbody tr.invoice-row { transition: all 0.3s ease; cursor: pointer; }
+				.invoices-tbl tbody tr.invoice-row:nth-child(4n+1) { background: #fff; }
+				.invoices-tbl tbody tr.invoice-row:nth-child(4n+3) { background: #f8fafc; }
+				.invoices-tbl tbody tr.invoice-row:hover { background: linear-gradient(135deg, #eef2ff 0%, #faf5ff 100%); }
+				.invoices-tbl tbody tr.invoice-row.expanded { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); }
+				.invoices-tbl tbody tr.invoice-row.expanded td { color: #fff; }
+				.invoices-tbl tbody tr.invoice-row.expanded .inv-link { background: linear-gradient(135deg, #10b981, #059669); }
+				.invoices-tbl tbody tr.invoice-row.expanded .date-cell { color: #a5b4fc; }
+				.invoices-tbl tbody tr.invoice-row.expanded .weight-cell { color: #c4b5fd; }
+				.invoices-tbl tbody tr.invoice-row.expanded .amount-cell { color: #93c5fd; }
+				.invoices-tbl tbody tr.invoice-row.expanded .items-count-badge { background: rgba(16, 185, 129, 0.3); color: #6ee7b7; }
+				.invoices-tbl tbody tr.invoice-row.expanded .branch-name { background: rgba(139, 92, 246, 0.3); color: #c4b5fd; }
+				.invoices-tbl tbody tr.invoice-row.expanded .creator-name { color: #94a3b8; }
+				.invoices-tbl tbody tr.invoice-row.expanded .payment-cell .payment-pct-text { color: #e2e8f0; }
+				.invoices-tbl tbody tr.invoice-row.expanded .payment-cell .payment-progress-bg { background: rgba(255,255,255,0.15); }
+				.invoices-tbl tbody tr.invoice-row.expanded .payment-cell .payment-progress-fill.pay-full { background: linear-gradient(90deg, #6ee7b7, #34d399); }
+				.invoices-tbl tbody tr.invoice-row.expanded .payment-cell .payment-progress-fill.pay-partial { background: linear-gradient(90deg, #fcd34d, #fbbf24); }
+				.invoices-tbl tbody tr.invoice-row.expanded .payment-cell .payment-progress-fill.pay-none { background: linear-gradient(90deg, #fca5a5, #f87171); }
+				.expand-cell { width: 40px; }
+				.expand-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; transition: all 0.3s ease; }
+				.expand-icon i { font-size: 14px; transition: transform 0.3s ease; }
+				.invoice-row.expanded .expand-icon { background: linear-gradient(135deg, #10b981, #059669); }
+				.invoice-row.expanded .expand-icon i { transform: rotate(45deg); }
+				.items-count-badge { background: linear-gradient(135deg, #d1fae5, #a7f3d0); color: #065f46; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 800; }
+
+				/* Payment Percent */
+				.payment-cell { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 90px; }
+				.payment-pct-text { font-size: 14px; font-weight: 900; }
+				.payment-pct-text.pay-full { color: #059669; }
+				.payment-pct-text.pay-partial { color: #d97706; }
+				.payment-pct-text.pay-none { color: #dc2626; }
+				.payment-progress-bg { width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; }
+				.payment-progress-fill { height: 100%; border-radius: 4px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+				.payment-progress-fill.pay-full { background: linear-gradient(90deg, #10b981, #059669); }
+				.payment-progress-fill.pay-partial { background: linear-gradient(90deg, #f59e0b, #d97706); }
+				.payment-progress-fill.pay-none { background: linear-gradient(90deg, #ef4444, #dc2626); }
+
+				.invoice-items-row { background: #f8fafc; }
+				.invoice-items-container { padding: 0 !important; background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); }
+				.invoice-items-tbl { width: 100%; border-collapse: collapse; font-size: 14px; margin: 0; }
+				.invoice-items-tbl th {
+					background: linear-gradient(135deg, #475569 0%, #334155 100%);
+					color: #fff; font-weight: 800; padding: 10px 8px; text-align: center;
+					font-size: 13px; text-transform: uppercase; letter-spacing: 0.3px;
+				}
+				.invoice-items-tbl td { padding: 10px 8px; text-align: center; border-bottom: 1px solid #cbd5e1; font-weight: 800; color: #1e293b; font-size: 14px; background: #fff; }
+				.invoice-items-tbl tbody tr:nth-child(even) td { background: #f8fafc; }
+				.invoice-items-tbl tbody tr:hover td { background: linear-gradient(135deg, #eef2ff 0%, #faf5ff 100%); }
+
 				.empty-box { text-align: center; padding: 100px 20px; animation: fadeIn 0.5s ease-out; }
 				.empty-box h4 { font-size: 24px; font-weight: 700; color: #6366f1; margin-bottom: 12px; }
 				.empty-box p { color: #9ca3af; font-size: 15px; }
@@ -827,6 +900,14 @@ class CustomerSalesReport {
 			$(this).toggleClass('open');
 			$(this).next('.items-panel').toggleClass('show');
 		});
+
+		$('.invoice-row').off('click').on('click', function(e) {
+			if ($(e.target).closest('.inv-link').length) return;
+			const $row = $(this);
+			const $itemsRow = $row.next('.invoice-items-row');
+			$row.toggleClass('expanded');
+			$itemsRow.toggle();
+		});
 	}
 
 	render_summary_header(data) {
@@ -850,6 +931,10 @@ class CustomerSalesReport {
 		if (filters.customer_group) filterTags += `<div class="filter-tag"><i class="fa fa-users"></i><span class="filter-label">مجموعة العملاء:</span><span class="filter-value">${filters.customer_group}</span></div>`;
 		if (filters.territory) filterTags += `<div class="filter-tag"><i class="fa fa-map-marker"></i><span class="filter-label">المنطقة:</span><span class="filter-value">${filters.territory}</span></div>`;
 		if (filters.sales_person) filterTags += `<div class="filter-tag"><i class="fa fa-id-badge"></i><span class="filter-label">المندوب:</span><span class="filter-value">${filters.sales_person}</span></div>`;
+		if (filters.payment_status) {
+			const payLabels = {'paid': 'مسددة', 'not_paid': 'غير مسددة'};
+			filterTags += `<div class="filter-tag"><i class="fa fa-money"></i><span class="filter-label">حالة السداد:</span><span class="filter-value">${payLabels[filters.payment_status] || filters.payment_status}</span></div>`;
+		}
 
 		return `
 			<div class="summary-header">
@@ -943,7 +1028,76 @@ class CustomerSalesReport {
 	}
 
 	render_items_table(items) {
-		if (!items || items.length === 0) return `<div class="empty-box" style="padding:30px;"><p>لا توجد أصناف</p></div>`;
+		if (!items || items.length === 0) return `<div class="empty-box" style="padding:30px;"><p>لا توجد فواتير</p></div>`;
+
+		// Group items by invoice
+		const invoicesMap = {};
+		items.forEach(item => {
+			const invId = item.invoice_id;
+			if (!invoicesMap[invId]) {
+				invoicesMap[invId] = {
+					invoice_id: invId,
+					posting_date: item.posting_date,
+					invoice_branch: item.invoice_branch,
+					invoice_creator: item.invoice_creator,
+					invoice_grand_total: item.invoice_grand_total || 0,
+					invoice_outstanding_amount: item.invoice_outstanding_amount || 0,
+					items: [],
+					total_amount: 0,
+					total_weight_tons: 0,
+					items_count: 0
+				};
+			}
+			invoicesMap[invId].items.push(item);
+			invoicesMap[invId].total_amount += item.total_amount || 0;
+			invoicesMap[invId].total_weight_tons += item.weight_in_tons || 0;
+			invoicesMap[invId].items_count++;
+		});
+
+		const invoices = Object.values(invoicesMap).sort((a, b) => {
+			return new Date(b.posting_date) - new Date(a.posting_date);
+		});
+
+		let invoiceRows = invoices.map(inv => {
+			const grandTotal = inv.invoice_grand_total || 0;
+			const outstanding = inv.invoice_outstanding_amount || 0;
+			const paidAmount = Math.max(0, grandTotal - outstanding);
+			const paymentPct = grandTotal > 0 ? (paidAmount / grandTotal) * 100 : 100;
+			const payCls = paymentPct >= 100 ? 'pay-full' : (paymentPct > 0 ? 'pay-partial' : 'pay-none');
+
+			return `
+				<tr class="invoice-row" data-invoice="${inv.invoice_id}">
+					<td class="expand-cell">
+						<span class="expand-icon"><i class="fa fa-plus-circle"></i></span>
+					</td>
+					<td><a href="/app/sales-invoice/${inv.invoice_id}" class="inv-link" target="_blank">${inv.invoice_id || ''}</a></td>
+					<td class="date-cell">${inv.posting_date || ''}</td>
+					<td><span class="items-count-badge">${inv.items_count} صنف</span></td>
+					<td class="weight-cell">${this.num(inv.total_weight_tons, 3)} طن</td>
+					<td class="amount-cell">${this.fmt(inv.invoice_grand_total)}</td>
+					<td><div class="payment-cell"><span class="payment-pct-text ${payCls}">${this.num(paymentPct, 0)}%</span><div class="payment-progress-bg"><div class="payment-progress-fill ${payCls}" style="width: ${Math.min(paymentPct, 100)}%"></div></div></div></td>
+					<td><div class="branch-user-cell"><span class="branch-name">${inv.invoice_branch || '-'}</span><span class="creator-name">${inv.invoice_creator || '-'}</span></div></td>
+				</tr>
+				<tr class="invoice-items-row" data-invoice="${inv.invoice_id}" style="display: none;">
+					<td colspan="8" class="invoice-items-container">
+						${this.render_invoice_items(inv.items)}
+					</td>
+				</tr>
+			`;
+		}).join('');
+
+		return `
+			<div class="invoices-scroll">
+				<table class="invoices-tbl">
+					<thead><tr><th style="width:40px;"></th><th>الفاتورة</th><th>التاريخ</th><th>الأصناف</th><th>الوزن</th><th>المبلغ</th><th>التحصيل</th><th>الفرع / المستخدم</th></tr></thead>
+					<tbody>${invoiceRows}</tbody>
+				</table>
+			</div>
+		`;
+	}
+
+	render_invoice_items(items) {
+		if (!items || items.length === 0) return `<div class="empty-box" style="padding:15px;"><p>لا توجد أصناف</p></div>`;
 
 		let rows = items.map(i => {
 			const stk = (i.current_stock || 0) > 100 ? 'hi' : ((i.current_stock || 0) > 20 ? 'md' : 'lo');
@@ -951,26 +1105,21 @@ class CustomerSalesReport {
 
 			return `
 				<tr>
-					<td><a href="/app/sales-invoice/${i.invoice_id}" class="inv-link" target="_blank">${i.invoice_id || ''}</a></td>
-					<td class="date-cell">${i.posting_date || ''}</td>
 					<td><div class="item-code">${i.item_code || ''}</div><div class="item-name">${i.item_name || ''}</div></td>
 					<td><div class="qty-cell"><span class="qty-main">${this.num(i.qty, 2)}</span><span class="qty-uom">${i.invoice_uom || ''}</span></div></td>
 					<td class="weight-cell">${this.num(i.weight_in_tons, 3)} طن</td>
 					<td><div class="rate-cell"><span class="rate-invoice">${this.fmt(invoiceRate)}/${i.invoice_uom || ''}</span><span class="rate-ton">${this.fmt(i.rate_per_ton)}/طن</span></div></td>
 					<td class="amount-cell">${this.fmt(i.total_amount)}</td>
 					<td><div class="stock-cell"><span class="stock-dot ${stk}"></span><span class="stock-val">${this.num(i.current_stock, 0)}</span></div></td>
-					<td><div class="branch-user-cell"><span class="branch-name">${i.invoice_branch || '-'}</span><span class="creator-name">${i.invoice_creator || '-'}</span></div></td>
 				</tr>
 			`;
 		}).join('');
 
 		return `
-			<div class="items-scroll">
-				<table class="items-tbl">
-					<thead><tr><th>الفاتورة</th><th>التاريخ</th><th>الصنف</th><th>الكمية</th><th>الوزن</th><th>السعر</th><th>المبلغ</th><th>المخزون</th><th>الفرع / المستخدم</th></tr></thead>
-					<tbody>${rows}</tbody>
-				</table>
-			</div>
+			<table class="invoice-items-tbl">
+				<thead><tr><th>الصنف</th><th>الكمية</th><th>الوزن</th><th>السعر</th><th>المبلغ</th><th>المخزون</th></tr></thead>
+				<tbody>${rows}</tbody>
+			</table>
 		`;
 	}
 

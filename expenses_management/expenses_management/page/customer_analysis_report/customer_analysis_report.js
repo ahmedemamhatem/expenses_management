@@ -22,7 +22,8 @@ class CustomerAnalysisReport {
 			sales_person: '',
 			sort_by: 'total_purchase_period',
 			sort_order: 'desc',
-			use_credit_days: true
+			use_credit_days: true,
+			payment_status: ''
 		};
 
 		this.setup_page();
@@ -98,6 +99,16 @@ class CustomerAnalysisReport {
 				{ label: __('المنطقة'), fieldname: 'territory', fieldtype: 'Link', options: 'Territory', default: me.filters.territory },
 				{ fieldtype: 'Section Break' },
 				{ label: __('مندوب المبيعات'), fieldname: 'sales_person', fieldtype: 'Link', options: 'Sales Person', default: me.filters.sales_person },
+				{ fieldtype: 'Column Break' },
+				{
+					label: __('حالة السداد'), fieldname: 'payment_status', fieldtype: 'Select',
+					options: [
+						{ value: '', label: 'الكل' },
+						{ value: 'not_paid', label: 'غير مسددة' },
+						{ value: 'paid', label: 'مسددة' }
+					],
+					default: me.filters.payment_status
+				},
 				{ fieldtype: 'Column Break' },
 				{
 					label: __('ترتيب حسب'), fieldname: 'sort_by', fieldtype: 'Select',
@@ -823,12 +834,30 @@ class CustomerAnalysisReport {
 				.invoices-tbl tbody tr.invoice-row.expanded .branch-name { background: rgba(139, 92, 246, 0.3); color: #c4b5fd; }
 				.invoices-tbl tbody tr.invoice-row.expanded .creator-name { color: #94a3b8; }
 				.invoices-tbl tbody tr.invoice-row.expanded .items-count-badge { background: rgba(16, 185, 129, 0.3); color: #6ee7b7; }
+				.invoices-tbl tbody tr.invoice-row.expanded .payment-cell .payment-pct-text { color: #e2e8f0; }
+				.invoices-tbl tbody tr.invoice-row.expanded .payment-cell .payment-progress-bg { background: rgba(255,255,255,0.15); }
+				.invoices-tbl tbody tr.invoice-row.expanded .payment-cell .payment-progress-fill.pay-full { background: linear-gradient(90deg, #6ee7b7, #34d399); }
+				.invoices-tbl tbody tr.invoice-row.expanded .payment-cell .payment-progress-fill.pay-partial { background: linear-gradient(90deg, #fcd34d, #fbbf24); }
+				.invoices-tbl tbody tr.invoice-row.expanded .payment-cell .payment-progress-fill.pay-none { background: linear-gradient(90deg, #fca5a5, #f87171); }
 				.expand-cell { width: 40px; }
 				.expand-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; transition: all 0.3s ease; }
 				.expand-icon i { font-size: 14px; transition: transform 0.3s ease; }
 				.invoice-row.expanded .expand-icon { background: linear-gradient(135deg, #10b981, #059669); }
 				.invoice-row.expanded .expand-icon i { transform: rotate(45deg); }
 				.items-count-badge { background: linear-gradient(135deg, #d1fae5, #a7f3d0); color: #065f46; padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 800; }
+
+				/* Payment Percent */
+				.payment-cell { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 90px; }
+				.payment-pct-text { font-size: 14px; font-weight: 900; }
+				.payment-pct-text.pay-full { color: #059669; }
+				.payment-pct-text.pay-partial { color: #d97706; }
+				.payment-pct-text.pay-none { color: #dc2626; }
+				.payment-progress-bg { width: 100%; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; position: relative; }
+				.payment-progress-fill { height: 100%; border-radius: 4px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+				.payment-progress-fill.pay-full { background: linear-gradient(90deg, #10b981, #059669); }
+				.payment-progress-fill.pay-partial { background: linear-gradient(90deg, #f59e0b, #d97706); }
+				.payment-progress-fill.pay-none { background: linear-gradient(90deg, #ef4444, #dc2626); }
+
 				.invoice-items-row { background: #f8fafc; }
 				.invoice-items-container { padding: 0 !important; background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); }
 				.invoice-items-tbl { width: 100%; border-collapse: collapse; font-size: 14px; margin: 0; }
@@ -1155,6 +1184,10 @@ class CustomerAnalysisReport {
 		if (filters.territory) filterTags += `<div class="filter-tag"><i class="fa fa-map-marker"></i><span class="filter-label">المنطقة:</span><span class="filter-value">${filters.territory}</span></div>`;
 		if (filters.sales_person) filterTags += `<div class="filter-tag"><i class="fa fa-id-badge"></i><span class="filter-label">المندوب:</span><span class="filter-value">${filters.sales_person}</span></div>`;
 		if (filters.pos_profile) filterTags += `<div class="filter-tag"><i class="fa fa-desktop"></i><span class="filter-label">نقطة البيع:</span><span class="filter-value">${filters.pos_profile}</span></div>`;
+		if (filters.payment_status) {
+			const payLabels = {'paid': 'مسددة', 'not_paid': 'غير مسددة'};
+			filterTags += `<div class="filter-tag"><i class="fa fa-money"></i><span class="filter-label">حالة السداد:</span><span class="filter-value">${payLabels[filters.payment_status] || filters.payment_status}</span></div>`;
+		}
 
 		return `
 			<div class="summary-header">
@@ -1312,6 +1345,7 @@ class CustomerAnalysisReport {
 					invoice_branch: item.invoice_branch,
 					invoice_creator: item.invoice_creator,
 					invoice_grand_total: item.invoice_grand_total || 0,
+					invoice_outstanding_amount: item.invoice_outstanding_amount || 0,
 					items: [],
 					total_amount: 0,
 					total_cost: 0,
@@ -1338,6 +1372,12 @@ class CustomerAnalysisReport {
 			const profitPct = inv.total_amount > 0 ? ((inv.total_revenue / inv.total_amount) * 100) : 0;
 			const profitPctCls = profitPct >= 0 ? 'pct-pos' : 'pct-neg';
 
+			const grandTotal = inv.invoice_grand_total || 0;
+			const outstanding = inv.invoice_outstanding_amount || 0;
+			const paidAmount = Math.max(0, grandTotal - outstanding);
+			const paymentPct = grandTotal > 0 ? (paidAmount / grandTotal) * 100 : 100;
+			const payCls = paymentPct >= 100 ? 'pay-full' : (paymentPct > 0 ? 'pay-partial' : 'pay-none');
+
 			return `
 				<tr class="invoice-row" data-invoice="${inv.invoice_id}" data-customer="${customer}">
 					<td class="expand-cell">
@@ -1350,10 +1390,11 @@ class CustomerAnalysisReport {
 					<td class="amount-cell">${this.fmt(inv.invoice_grand_total)}</td>
 					<td class="cost-cell">${this.fmt(inv.total_cost)}</td>
 					<td><div class="profit-cell"><span class="${revCls}">${this.fmt(inv.total_revenue)}</span><span class="profit-pct ${profitPctCls}">${this.num(profitPct, 1)}%</span></div></td>
+					<td><div class="payment-cell"><span class="payment-pct-text ${payCls}">${this.num(paymentPct, 0)}%</span><div class="payment-progress-bg"><div class="payment-progress-fill ${payCls}" style="width: ${Math.min(paymentPct, 100)}%"></div></div></div></td>
 					<td><div class="branch-user-cell"><span class="branch-name">${inv.invoice_branch || '-'}</span><span class="creator-name">${inv.invoice_creator || '-'}</span></div></td>
 				</tr>
 				<tr class="invoice-items-row" data-invoice="${inv.invoice_id}" style="display: none;">
-					<td colspan="9" class="invoice-items-container">
+					<td colspan="10" class="invoice-items-container">
 						${this.render_invoice_items(inv.items)}
 					</td>
 				</tr>
@@ -1363,7 +1404,7 @@ class CustomerAnalysisReport {
 		return `
 			<div class="invoices-scroll">
 				<table class="invoices-tbl">
-					<thead><tr><th style="width:40px;"></th><th>الفاتورة</th><th>التاريخ</th><th>الأصناف</th><th>الوزن</th><th>المبلغ</th><th>التكلفة</th><th>الربح</th><th>الفرع / المستخدم</th></tr></thead>
+					<thead><tr><th style="width:40px;"></th><th>الفاتورة</th><th>التاريخ</th><th>الأصناف</th><th>الوزن</th><th>المبلغ</th><th>التكلفة</th><th>الربح</th><th>التحصيل</th><th>الفرع / المستخدم</th></tr></thead>
 					<tbody>${invoiceRows}</tbody>
 				</table>
 			</div>
@@ -1543,6 +1584,7 @@ class CustomerAnalysisReport {
 							posting_date: item.posting_date,
 							invoice_branch: item.invoice_branch,
 							invoice_grand_total: item.invoice_grand_total || 0,
+							invoice_outstanding_amount: item.invoice_outstanding_amount || 0,
 							items: [],
 							total_cost: 0,
 							total_revenue: 0,
@@ -1570,6 +1612,7 @@ class CustomerAnalysisReport {
 										<span style="margin-left: 15px;">المبلغ: ${this.fmt(inv.invoice_grand_total)}</span>
 										<span style="margin-left: 15px;">الربح: ${this.fmt(inv.total_revenue)} <span class="pct-badge ${invProfitPct >= 0 ? 'pct-pos' : 'pct-neg'}">${this.num(invProfitPct, 1)}%</span></span>
 										<span style="margin-left: 15px;">الفرع: ${inv.invoice_branch || '-'}</span>
+										<span style="margin-left: 15px;">التحصيل: ${inv.invoice_grand_total > 0 ? this.num(((inv.invoice_grand_total - (inv.invoice_outstanding_amount || 0)) / inv.invoice_grand_total) * 100, 0) : 100}%</span>
 									</th>
 								</tr>
 								<tr><th>#</th><th>الصنف</th><th>الكمية</th><th>الوزن</th><th>السعر</th><th>المبلغ</th><th>التكلفة</th><th>الربح</th></tr>
