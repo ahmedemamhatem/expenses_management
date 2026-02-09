@@ -181,13 +181,15 @@ def get_pending_workflow_actions():
             if not frappe.db.exists(action.reference_doctype, action.reference_name):
                 continue
 
-            # Skip if document is submitted (docstatus=1) or cancelled (docstatus=2)
+            # Skip if document is cancelled (docstatus=2)
+            # Note: docstatus=1 (Submitted) is valid for submittable doctypes
+            # like Leave Application, Loan Application, etc.
             docstatus = frappe.db.get_value(
                 action.reference_doctype,
                 action.reference_name,
                 "docstatus"
             )
-            if docstatus in (1, 2):
+            if docstatus == 2:
                 continue
 
             if not frappe.has_permission(
