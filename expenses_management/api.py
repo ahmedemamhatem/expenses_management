@@ -112,26 +112,40 @@ def get_document_preview(doctype, docname):
 def get_pending_workflow_actions():
     """
     Return all pending workflow actions for current user or their roles.
-    Only returns documents that have an active workflow configured.
+    Uses two strategies:
+    1. Query Workflow Action table (standard Frappe mechanism)
+    2. Directly query documents in pending workflow states (fallback for
+       when Workflow Action records are missing)
     """
     user = frappe.session.user
     roles = frappe.get_roles(user)
 
-    # Get list of doctypes that have active workflows
-    active_workflow_doctypes = frappe.get_all(
+    # Get active workflows with their details
+    active_workflows = frappe.get_all(
         "Workflow",
         filters={"is_active": 1},
-        pluck="document_type"
+        fields=["name", "document_type"]
     )
 
-    if not active_workflow_doctypes:
+    if not active_workflows:
         return []
 
-    # Use Query Builder with JOIN to permitted_roles child table
+    active_workflow_doctypes = [w.document_type for w in active_workflows]
+
+    # States to exclude (completed/final states)
+    excluded_states = {
+        "approved", "cancelled", "rejected", "completed", "closed",
+        "denied", "done", "finished", "paid", "submitted"
+    }
+
+    accessible_actions = []
+    # Track seen documents to avoid duplicates: (doctype, docname)
+    seen_docs = set()
+
+    # ── Strategy 1: Workflow Action table ──
     WorkflowAction = DocType("Workflow Action")
     WorkflowActionPermittedRole = DocType("Workflow Action Permitted Role")
 
-    # Query workflow actions where user has permitted role OR is directly assigned
     query = (
         frappe.qb.from_(WorkflowAction)
         .left_join(WorkflowActionPermittedRole)
@@ -155,56 +169,35 @@ def get_pending_workflow_actions():
     )
 
     actions = query.run(as_dict=True)
-
-    # States to exclude (completed/final states)
-    excluded_states = {
-        "approved", "cancelled", "rejected", "completed", "closed",
-        "denied", "done", "finished", "paid", "submitted"
-    }
-
-    # Filter by permission and enrich with document title
-    accessible_actions = []
-    seen = set()  # Deduplicate by workflow action name
+    seen_wa = set()
 
     for action in actions:
-        if action.name in seen:
+        if action.name in seen_wa:
             continue
-        seen.add(action.name)
+        seen_wa.add(action.name)
 
-        # Skip if workflow state is a final/completed state
         state_lower = (action.workflow_state or "").lower()
         if any(excl in state_lower for excl in excluded_states):
             continue
 
         try:
-            # Skip if document doesn't exist (was deleted)
             if not frappe.db.exists(action.reference_doctype, action.reference_name):
                 continue
 
-            # Skip if document is cancelled (docstatus=2)
-            # Note: docstatus=1 (Submitted) is valid for submittable doctypes
-            # like Leave Application, Loan Application, etc.
             docstatus = frappe.db.get_value(
-                action.reference_doctype,
-                action.reference_name,
-                "docstatus"
+                action.reference_doctype, action.reference_name, "docstatus"
             )
             if docstatus == 2:
                 continue
 
             if not frappe.has_permission(
-                action.reference_doctype,
-                "read",
-                action.reference_name,
-                user=user
+                action.reference_doctype, "read", action.reference_name, user=user
             ):
                 continue
 
-            # Get document title if available
-            doc_title = get_document_title(
-                action.reference_doctype,
-                action.reference_name
-            )
+            doc_title = get_document_title(action.reference_doctype, action.reference_name)
+            doc_key = (action.reference_doctype, action.reference_name)
+            seen_docs.add(doc_key)
 
             accessible_actions.append({
                 "name": action.name,
@@ -217,8 +210,71 @@ def get_pending_workflow_actions():
                 "doc_title": doc_title,
             })
         except Exception:
-            # Skip if doctype doesn't exist or other permission error
             continue
+
+    # ── Strategy 2: Direct document query for pending workflow states ──
+    # This catches documents where Workflow Action records were never created
+    for wf in active_workflows:
+        doctype = wf.document_type
+        wf_name = wf.name
+
+        try:
+            meta = frappe.get_meta(doctype)
+            if not meta.has_field("workflow_state"):
+                continue
+
+            # Get non-final states from the workflow
+            wf_doc = frappe.get_doc("Workflow", wf_name)
+            pending_states = []
+            for state in wf_doc.states:
+                s_lower = state.state.lower()
+                if not any(excl in s_lower for excl in excluded_states):
+                    pending_states.append(state.state)
+
+            if not pending_states:
+                continue
+
+            # Query documents in pending workflow states
+            docs = frappe.get_all(
+                doctype,
+                filters={
+                    "workflow_state": ["in", pending_states],
+                    "docstatus": ["!=", 2],
+                },
+                fields=["name", "workflow_state", "creation"],
+                order_by="creation desc",
+                limit_page_length=100,
+            )
+
+            for doc in docs:
+                doc_key = (doctype, doc.name)
+                if doc_key in seen_docs:
+                    continue
+
+                try:
+                    if not frappe.has_permission(doctype, "read", doc.name, user=user):
+                        continue
+                except Exception:
+                    continue
+
+                seen_docs.add(doc_key)
+                doc_title = get_document_title(doctype, doc.name)
+
+                accessible_actions.append({
+                    "name": doc.name,
+                    "reference_doctype": doctype,
+                    "reference_name": doc.name,
+                    "workflow_state": doc.workflow_state,
+                    "creation": doc.creation,
+                    "user": "",
+                    "role": "",
+                    "doc_title": doc_title,
+                })
+        except Exception:
+            continue
+
+    # Sort all results by creation descending
+    accessible_actions.sort(key=lambda x: x.get("creation") or "", reverse=True)
 
     return accessible_actions
 
