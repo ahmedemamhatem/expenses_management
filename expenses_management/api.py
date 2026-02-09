@@ -131,6 +131,7 @@ def get_pending_workflow_actions():
         return []
 
     active_workflow_doctypes = [w.document_type for w in active_workflows]
+    cutoff_date = "2026-01-01"
 
     # States to exclude (completed/final states)
     excluded_states = {
@@ -161,6 +162,7 @@ def get_pending_workflow_actions():
         )
         .where(WorkflowAction.status == "Open")
         .where(WorkflowAction.reference_doctype.isin(active_workflow_doctypes))
+        .where(WorkflowAction.creation >= cutoff_date)
         .where(
             (WorkflowAction.user == user) | (WorkflowActionPermittedRole.role.isin(roles))
         )
@@ -187,7 +189,7 @@ def get_pending_workflow_actions():
             docstatus = frappe.db.get_value(
                 action.reference_doctype, action.reference_name, "docstatus"
             )
-            if docstatus == 2:
+            if docstatus in (1, 2):
                 continue
 
             if not frappe.has_permission(
@@ -239,7 +241,8 @@ def get_pending_workflow_actions():
                 doctype,
                 filters={
                     "workflow_state": ["in", pending_states],
-                    "docstatus": ["!=", 2],
+                    "docstatus": 0,
+                    "creation": [">=", cutoff_date],
                 },
                 fields=["name", "workflow_state", "creation"],
                 order_by="creation desc",
