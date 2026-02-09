@@ -73,14 +73,65 @@ def validate_available_qty(doc, method=None):
     if doc.company == "شركة المهنا التجاريه":
         return
 
+    if not doc.items:
+        return
+
     warehouse_errors = []
     qty_errors = []
     user_roles = frappe.get_roles()
 
+    # Batch: get is_stock_item and stock_uom for all item codes in ONE query
+    item_codes = list(set(item.item_code for item in doc.items if item.item_code))
+    if not item_codes:
+        return
+
+    item_data = frappe.get_all(
+        "Item",
+        filters={"name": ["in", item_codes]},
+        fields=["name", "is_stock_item", "stock_uom"],
+        limit_page_length=0,
+    )
+    item_map = {d.name: d for d in item_data}
+
+    # Batch: get warehouse settings for all unique warehouses in ONE query
+    warehouses = list(set(
+        item.custom_expected_delivery_warehouse
+        for item in doc.items
+        if item.custom_expected_delivery_warehouse
+    ))
+    wh_map = {}
+    if warehouses:
+        wh_data = frappe.get_all(
+            "Warehouse",
+            filters={"name": ["in", warehouses]},
+            fields=["name", "custom_validate_available_qty", "custom_bypass_qty_validation_role"],
+            limit_page_length=0,
+        )
+        wh_map = {d.name: d for d in wh_data}
+
+    # Batch: get available qty from Bin for all (item_code, warehouse) pairs
+    bin_pairs = list(set(
+        (item.item_code, item.custom_expected_delivery_warehouse)
+        for item in doc.items
+        if item.item_code and item.custom_expected_delivery_warehouse
+        and item_map.get(item.item_code, {}).get("is_stock_item")
+    ))
+    bin_map = {}
+    if bin_pairs:
+        # Build OR conditions for batch Bin lookup
+        bin_item_codes = list(set(p[0] for p in bin_pairs))
+        bin_warehouses = list(set(p[1] for p in bin_pairs))
+        bin_data = frappe.db.sql("""
+            SELECT item_code, warehouse, actual_qty
+            FROM `tabBin`
+            WHERE item_code IN %(items)s AND warehouse IN %(warehouses)s
+        """, {"items": bin_item_codes, "warehouses": bin_warehouses}, as_dict=True)
+        for b in bin_data:
+            bin_map[(b.item_code, b.warehouse)] = b.actual_qty or 0
+
     for item in doc.items:
-        # Check if item is a stock item - skip validation for non-stock items
-        is_stock_item = frappe.db.get_value("Item", item.item_code, "is_stock_item")
-        if not is_stock_item:
+        item_info = item_map.get(item.item_code)
+        if not item_info or not item_info.is_stock_item:
             continue
 
         # Check if Expected Delivery Warehouse is set
@@ -91,30 +142,22 @@ def validate_available_qty(doc, method=None):
                 "item_name": item.item_name
             })
         else:
-            # Check if validation is excluded for this warehouse
-            warehouse_settings = frappe.db.get_value(
-                "Warehouse",
-                item.custom_expected_delivery_warehouse,
-                ["custom_validate_available_qty", "custom_bypass_qty_validation_role"],
-                as_dict=True
-            )
+            # Check warehouse settings from batch lookup
+            wh_settings = wh_map.get(item.custom_expected_delivery_warehouse)
 
-            # Skip validation for this item if warehouse is excluded (checkbox checked)
-            if warehouse_settings and warehouse_settings.custom_validate_available_qty:
+            if wh_settings and wh_settings.custom_validate_available_qty:
                 continue
 
-            # Skip validation for this item if user has bypass role
-            bypass_role = warehouse_settings.custom_bypass_qty_validation_role if warehouse_settings else None
+            bypass_role = wh_settings.custom_bypass_qty_validation_role if wh_settings else None
             if bypass_role and bypass_role in user_roles:
                 continue
 
-            # Check available qty (available is in stock UOM)
-            available = get_available_qty(
-                item.item_code, item.custom_expected_delivery_warehouse
+            # Get available qty from batch lookup
+            available = bin_map.get(
+                (item.item_code, item.custom_expected_delivery_warehouse), 0
             )
 
-            # Get stock UOM for the item
-            stock_uom = frappe.db.get_value("Item", item.item_code, "stock_uom")
+            stock_uom = item_info.stock_uom
 
             # Convert required qty to stock UOM if different UOM is used
             if item.uom and item.uom != stock_uom:
@@ -125,10 +168,8 @@ def validate_available_qty(doc, method=None):
                 required_in_stock_uom = item.qty
 
             if available < required_in_stock_uom:
-                # Calculate shortage in stock UOM
                 shortage_in_stock_uom = required_in_stock_uom - available
 
-                # Convert available and shortage back to item UOM for display
                 if conversion_factor != 1:
                     available_in_item_uom = available / conversion_factor
                     shortage_in_item_uom = shortage_in_stock_uom / conversion_factor
@@ -275,18 +316,39 @@ def update_available_qty_on_validate(doc, method=None):
     if doc.docstatus != 0:
         return
 
+    if not doc.items:
+        return
+
     # Get default warehouse from POS Profile for current user
     default_warehouse = get_user_pos_warehouse()
 
+    # Set default warehouse first
     for item in doc.items:
-        # Set default warehouse if not set
         if not item.custom_expected_delivery_warehouse and default_warehouse:
             item.custom_expected_delivery_warehouse = default_warehouse
 
-        # Update available qty if warehouse is set
+    # Batch: get all Bin quantities in ONE query
+    bin_pairs = list(set(
+        (item.item_code, item.custom_expected_delivery_warehouse)
+        for item in doc.items
+        if item.item_code and item.custom_expected_delivery_warehouse
+    ))
+    bin_map = {}
+    if bin_pairs:
+        bin_item_codes = list(set(p[0] for p in bin_pairs))
+        bin_warehouses = list(set(p[1] for p in bin_pairs))
+        bin_data = frappe.db.sql("""
+            SELECT item_code, warehouse, actual_qty
+            FROM `tabBin`
+            WHERE item_code IN %(items)s AND warehouse IN %(warehouses)s
+        """, {"items": bin_item_codes, "warehouses": bin_warehouses}, as_dict=True)
+        for b in bin_data:
+            bin_map[(b.item_code, b.warehouse)] = b.actual_qty or 0
+
+    for item in doc.items:
         if item.custom_expected_delivery_warehouse and item.item_code:
-            item.custom_available_qty = get_available_qty(
-                item.item_code, item.custom_expected_delivery_warehouse
+            item.custom_available_qty = bin_map.get(
+                (item.item_code, item.custom_expected_delivery_warehouse), 0
             )
         else:
             item.custom_available_qty = 0
@@ -651,23 +713,30 @@ def validate_item_rate_limits(doc, method=None):
     if not doc.selling_price_list:
         return
 
+    if not doc.items:
+        return
+
+    # Batch: get all Item Prices for items in this invoice + price list in ONE query
+    item_codes = list(set(item.item_code for item in doc.items if item.item_code))
+    if not item_codes:
+        return
+
+    price_data = frappe.db.sql("""
+        SELECT item_code, custom_minimum_rate, custom_maximum_rate, price_list_rate
+        FROM `tabItem Price`
+        WHERE item_code IN %(items)s
+        AND price_list = %(price_list)s
+    """, {"items": item_codes, "price_list": doc.selling_price_list}, as_dict=True)
+
+    price_map = {p.item_code: p for p in price_data}
+
     rate_errors = []
 
     for item in doc.items:
         if not item.item_code:
             continue
 
-        # Get Item Price with min/max rates for this item and price list
-        item_price = frappe.db.get_value(
-            "Item Price",
-            {
-                "item_code": item.item_code,
-                "price_list": doc.selling_price_list,
-            },
-            ["custom_minimum_rate", "custom_maximum_rate", "price_list_rate"],
-            as_dict=True
-        )
-
+        item_price = price_map.get(item.item_code)
         if not item_price:
             continue
 

@@ -144,6 +144,7 @@ def get_pending_workflow_actions():
     seen_docs = set()
 
     # ── Strategy 1: Workflow Action table ──
+    # Single query with JOIN to get workflow_state + docstatus from referenced docs
     WorkflowAction = DocType("Workflow Action")
     WorkflowActionPermittedRole = DocType("Workflow Action Permitted Role")
 
@@ -171,8 +172,10 @@ def get_pending_workflow_actions():
     )
 
     actions = query.run(as_dict=True)
-    seen_wa = set()
 
+    # Deduplicate and filter excluded states in Python (cheap)
+    seen_wa = set()
+    filtered_actions = []
     for action in actions:
         if action.name in seen_wa:
             continue
@@ -181,38 +184,73 @@ def get_pending_workflow_actions():
         state_lower = (action.workflow_state or "").lower()
         if any(excl in state_lower for excl in excluded_states):
             continue
+        filtered_actions.append(action)
 
-        try:
-            if not frappe.db.exists(action.reference_doctype, action.reference_name):
+    # Batch: collect all (doctype, docname) pairs and verify existence + docstatus in bulk
+    if filtered_actions:
+        # Group by doctype for batch queries
+        by_doctype = {}
+        for action in filtered_actions:
+            by_doctype.setdefault(action.reference_doctype, []).append(action)
+
+        for dt, dt_actions in by_doctype.items():
+            names = list(set(a.reference_name for a in dt_actions))
+            try:
+                # Single query per doctype: get name, docstatus, and title field
+                meta = frappe.get_meta(dt)
+                title_field = _get_title_field(meta)
+                fields = ["name", "docstatus"]
+                if title_field and title_field not in fields:
+                    fields.append(title_field)
+
+                existing_docs = frappe.get_all(
+                    dt,
+                    filters={"name": ["in", names]},
+                    fields=fields,
+                    limit_page_length=0,
+                )
+                # Build lookup: name -> {docstatus, title}
+                doc_map = {}
+                for d in existing_docs:
+                    doc_map[d.name] = d
+            except Exception:
                 continue
 
-            docstatus = frappe.db.get_value(
-                action.reference_doctype, action.reference_name, "docstatus"
-            )
-            if docstatus in (1, 2):
-                continue
+            for action in dt_actions:
+                doc_info = doc_map.get(action.reference_name)
+                if not doc_info:
+                    continue
+                if doc_info.docstatus in (1, 2):
+                    continue
 
-            if not frappe.has_permission(
-                action.reference_doctype, "read", action.reference_name, user=user
-            ):
-                continue
+                doc_key = (action.reference_doctype, action.reference_name)
+                if doc_key in seen_docs:
+                    continue
 
-            doc_title = get_document_title(action.reference_doctype, action.reference_name)
-            doc_key = (action.reference_doctype, action.reference_name)
-            seen_docs.add(doc_key)
+                # Permission check (unavoidable per-doc, but now after bulk filtering)
+                try:
+                    if not frappe.has_permission(
+                        action.reference_doctype, "read", action.reference_name, user=user
+                    ):
+                        continue
+                except Exception:
+                    continue
 
-            accessible_actions.append({
-                "name": action.name,
-                "reference_doctype": action.reference_doctype,
-                "reference_name": action.reference_name,
-                "workflow_state": action.workflow_state,
-                "creation": action.creation,
-                "user": action.user,
-                "role": action.role,
-                "doc_title": doc_title,
-            })
-        except Exception:
-            continue
+                seen_docs.add(doc_key)
+                doc_title = doc_info.get(title_field) if title_field else None
+                if not doc_title or doc_title == action.reference_name:
+                    doc_title = action.reference_name
+
+                accessible_actions.append({
+                    "name": action.name,
+                    "reference_doctype": action.reference_doctype,
+                    "reference_name": action.reference_name,
+                    "workflow_state": action.workflow_state,
+                    "creation": action.creation,
+                    "user": action.user,
+                    "role": action.role,
+                    "doc_title": doc_title,
+                })
 
     # ── Strategy 2: Direct document query for pending workflow states ──
     # This catches documents where Workflow Action records were never created
@@ -225,7 +263,7 @@ def get_pending_workflow_actions():
             if not meta.has_field("workflow_state"):
                 continue
 
-            # Get non-final states from the workflow
+            # Get non-final states from the workflow (cached by Frappe)
             wf_doc = frappe.get_doc("Workflow", wf_name)
             pending_states = []
             for state in wf_doc.states:
@@ -236,6 +274,12 @@ def get_pending_workflow_actions():
             if not pending_states:
                 continue
 
+            # Get title field for this doctype
+            title_field = _get_title_field(meta)
+            fields = ["name", "workflow_state", "creation"]
+            if title_field and title_field not in fields:
+                fields.append(title_field)
+
             # Query documents in pending workflow states
             docs = frappe.get_all(
                 doctype,
@@ -244,7 +288,7 @@ def get_pending_workflow_actions():
                     "docstatus": 0,
                     "creation": [">=", cutoff_date],
                 },
-                fields=["name", "workflow_state", "creation"],
+                fields=fields,
                 order_by="creation desc",
                 limit_page_length=100,
             )
@@ -261,7 +305,9 @@ def get_pending_workflow_actions():
                     continue
 
                 seen_docs.add(doc_key)
-                doc_title = get_document_title(doctype, doc.name)
+                doc_title = doc.get(title_field) if title_field else None
+                if not doc_title or doc_title == doc.name:
+                    doc_title = doc.name
 
                 accessible_actions.append({
                     "name": doc.name,
@@ -280,6 +326,16 @@ def get_pending_workflow_actions():
     accessible_actions.sort(key=lambda x: x.get("creation") or "", reverse=True)
 
     return accessible_actions
+
+
+def _get_title_field(meta):
+    """Get the best title field for a doctype meta, returns fieldname or None."""
+    if meta.title_field:
+        return meta.title_field
+    for field in ["title", "subject", "customer_name", "supplier_name", "employee_name", "full_name"]:
+        if meta.has_field(field):
+            return field
+    return None
 
 
 @frappe.whitelist()
@@ -336,15 +392,44 @@ def get_user_assignments():
     today = getdate()
     results = []
 
+    # Batch verify document existence: group by reference_type
+    ref_groups = {}
     for a in assignments:
-        # Skip if reference document no longer exists
         if a.reference_type and a.reference_name:
-            if not frappe.db.exists(a.reference_type, a.reference_name):
+            ref_groups.setdefault(a.reference_type, set()).add(a.reference_name)
+
+    existing_refs = set()
+    title_cache = {}
+    for ref_type, ref_names in ref_groups.items():
+        try:
+            meta = frappe.get_meta(ref_type)
+            title_field = _get_title_field(meta)
+            fields = ["name"]
+            if title_field:
+                fields.append(title_field)
+            docs = frappe.get_all(
+                ref_type,
+                filters={"name": ["in", list(ref_names)]},
+                fields=fields,
+                limit_page_length=0,
+            )
+            for d in docs:
+                key = (ref_type, d.name)
+                existing_refs.add(key)
+                title_val = d.get(title_field) if title_field else None
+                if title_val and title_val != d.name:
+                    title_cache[key] = title_val
+        except Exception:
+            # If doctype doesn't exist, skip all
+            pass
+
+    for a in assignments:
+        if a.reference_type and a.reference_name:
+            if (a.reference_type, a.reference_name) not in existing_refs:
                 continue
 
-        a["doc_title"] = get_document_title(
-            a.reference_type, a.reference_name
-        ) if a.reference_type and a.reference_name else (a.reference_name or "")
+        key = (a.reference_type, a.reference_name) if a.reference_type else None
+        a["doc_title"] = title_cache.get(key, a.reference_name or "") if key else (a.reference_name or "")
 
         a["is_overdue"] = bool(a.date and getdate(a.date) < today)
 
@@ -390,16 +475,44 @@ def get_user_mentions():
 
     mentions = query.run(as_dict=True)
 
+    # Batch verify document existence
+    ref_groups = {}
+    for m in mentions:
+        if m.document_type and m.document_name:
+            ref_groups.setdefault(m.document_type, set()).add(m.document_name)
+
+    existing_refs = set()
+    title_cache = {}
+    for ref_type, ref_names in ref_groups.items():
+        try:
+            meta = frappe.get_meta(ref_type)
+            title_field = _get_title_field(meta)
+            fields = ["name"]
+            if title_field:
+                fields.append(title_field)
+            docs = frappe.get_all(
+                ref_type,
+                filters={"name": ["in", list(ref_names)]},
+                fields=fields,
+                limit_page_length=0,
+            )
+            for d in docs:
+                key = (ref_type, d.name)
+                existing_refs.add(key)
+                title_val = d.get(title_field) if title_field else None
+                if title_val and title_val != d.name:
+                    title_cache[key] = title_val
+        except Exception:
+            pass
+
     results = []
     for m in mentions:
-        # Skip if reference document no longer exists
         if m.document_type and m.document_name:
-            if not frappe.db.exists(m.document_type, m.document_name):
+            if (m.document_type, m.document_name) not in existing_refs:
                 continue
 
-        m["doc_title"] = get_document_title(
-            m.document_type, m.document_name
-        ) if m.document_type and m.document_name else (m.document_name or "")
+        key = (m.document_type, m.document_name) if m.document_type else None
+        m["doc_title"] = title_cache.get(key, m.document_name or "") if key else (m.document_name or "")
 
         # Extract plain text snippet from email_content
         if m.email_content:
@@ -471,19 +584,12 @@ def get_document_title(doctype, docname):
     """
     try:
         meta = frappe.get_meta(doctype)
-        title_field = meta.title_field
+        title_field = _get_title_field(meta)
 
         if title_field:
             title = frappe.db.get_value(doctype, docname, title_field)
             if title and title != docname:
                 return title
-
-        # Fallback: try common title fields
-        for field in ["title", "subject", "customer_name", "supplier_name", "employee_name", "full_name"]:
-            if meta.has_field(field):
-                value = frappe.db.get_value(doctype, docname, field)
-                if value:
-                    return value
 
         return docname
     except Exception:
