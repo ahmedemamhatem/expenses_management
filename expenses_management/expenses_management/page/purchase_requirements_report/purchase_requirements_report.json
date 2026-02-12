@@ -1,0 +1,47 @@
+{
+ "content": null,
+ "creation": "2026-02-11 10:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-02-11 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Expenses Management",
+ "name": "purchase-requirements-report",
+ "owner": "Administrator",
+ "page_name": "purchase-requirements-report",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Accounts Manager"
+  },
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Sales Manager"
+  },
+  {
+   "role": "Sales User"
+  },
+  {
+   "role": "Stock Manager"
+  },
+  {
+   "role": "Stock User"
+  },
+  {
+   "role": "Purchase Manager"
+  },
+  {
+   "role": "Purchase User"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Purchase Requirements Report"
+}

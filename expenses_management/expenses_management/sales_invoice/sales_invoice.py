@@ -519,8 +519,7 @@ def validate_customer_credit(doc, method=None):
             )
 
     # Case 3: Check for overdue invoices using due_date
-    # Only block if customer has NO credit limit or would exceed credit limit
-    # If within credit limit, just show warning for overdue invoices
+    # Always block if customer has ANY overdue invoice with outstanding > 1
     today = frappe.utils.today()
 
     # ✅ Get overdue invoices - only where outstanding > 1 SAR
@@ -559,11 +558,9 @@ def validate_customer_credit(doc, method=None):
             "<b>الفواتير المتأخرة:</b><br>{1}"
         ).format(round(total_overdue, 2), invoice_details)
 
-        # If customer has credit limit and new balance is within limit, just show warning
-        # Otherwise block (unless skip_blocking is enabled)
-        within_credit_limit = customer_credit_limit > 0 and new_total_balance <= customer_credit_limit
-
-        if skip_blocking or within_credit_limit:
+        # Always block submission if overdue invoices exist
+        # Only skip_blocking (custom_stop_payment_terms) can bypass this
+        if skip_blocking:
             frappe.msgprint(
                 msg=message,
                 title=_("تحذير: مبالغ متأخرة"),
