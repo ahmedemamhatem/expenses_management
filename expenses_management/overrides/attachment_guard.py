@@ -5,6 +5,7 @@ from frappe import _
 
 IGNORED_DOCTYPES = ["Sales Invoice"]
 EXEMPT_EXTENSIONS = [".xsl", ".xml", ".png"]
+EXEMPT_ROLES = ["System Manager", "Repost Item Valuation"]
 
 
 def _has_exempt_extension(doc):
@@ -13,11 +14,19 @@ def _has_exempt_extension(doc):
 	return ext in EXEMPT_EXTENSIONS
 
 
+def _user_has_exempt_role():
+	user_roles = frappe.get_roles(frappe.session.user)
+	return any(role in user_roles for role in EXEMPT_ROLES)
+
+
 def _is_submitted_and_locked(doc):
 	if not doc.attached_to_doctype or not doc.attached_to_name:
 		return False
 
 	if doc.attached_to_doctype in IGNORED_DOCTYPES:
+		return False
+
+	if _user_has_exempt_role():
 		return False
 
 	ref_meta = frappe.get_meta(doc.attached_to_doctype)

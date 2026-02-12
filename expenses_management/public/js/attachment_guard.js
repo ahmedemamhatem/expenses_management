@@ -15,6 +15,13 @@
 
 	const EXEMPT_EXTENSIONS = [".xsl", ".xml", ".png"];
 	const IGNORED_DOCTYPES = ["Sales Invoice"];
+	const EXEMPT_ROLES = ["System Manager", "Repost Item Valuation"];
+
+	function user_has_exempt_role() {
+		return EXEMPT_ROLES.some(function (role) {
+			return frappe.user_roles && frappe.user_roles.includes(role);
+		});
+	}
 
 	function has_exempt_extension(filename) {
 		if (!filename) return false;
@@ -32,6 +39,7 @@
 		if (!frm || !frm.meta.is_submittable) return false;
 		if (cint(frm.doc.docstatus) !== 1) return false;
 		if (is_ignored_doctype(frm)) return false;
+		if (user_has_exempt_role()) return false;
 		return true;
 	}
 
