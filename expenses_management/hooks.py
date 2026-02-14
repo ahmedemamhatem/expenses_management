@@ -194,6 +194,7 @@ doc_events = {
     },
     "Sales Invoice": {
         "validate": [
+            "expenses_management.expenses_management.sales_invoice.sales_invoice.sync_return_payments",
             "expenses_management.expenses_management.sales_invoice.sales_invoice.update_available_qty_on_validate",
             "expenses_management.expenses_management.sales_invoice.sales_invoice.validate_customer_credit",
             "expenses_management.expenses_management.sales_invoice.sales_invoice.validate_item_rate_limits",

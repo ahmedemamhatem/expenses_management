@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.utils import flt
 from erpnext.stock.get_item_details import get_conversion_factor
 
 
@@ -845,3 +846,76 @@ def build_rate_limit_error_message(rate_errors):
     """)
 
     return "".join(message_parts)
+
+
+def sync_return_payments(doc, method=None):
+    """Ensure return invoice (credit note) has the same payment table as the original invoice.
+
+    When a return is created from a POS invoice (is_pos=1), the return must have:
+    - is_pos = 1
+    - Same payment rows with negated amounts
+    - paid_amount = negated original paid_amount
+    """
+
+    if not doc.is_return or not doc.return_against:
+        return
+
+    # Only run on draft
+    if doc.docstatus != 0:
+        return
+
+    original = frappe.get_doc("Sales Invoice", doc.return_against)
+
+    # Only handle POS invoices that have payments
+    if not original.is_pos or not original.payments:
+        return
+
+    # Ensure return keeps is_pos = 1
+    doc.is_pos = 1
+
+    # Build a map of what the return should have: same modes, negated amounts
+    expected_payments = {}
+    for p in original.payments:
+        base_amount = flt(p.amount * original.conversion_rate, original.precision("base_paid_amount"))
+        expected_payments[p.mode_of_payment] = {
+            "mode_of_payment": p.mode_of_payment,
+            "type": p.type,
+            "amount": -1 * flt(p.amount),
+            "base_amount": -1 * base_amount,
+            "account": p.account,
+            "default": p.default,
+        }
+
+    # Check if current payments already match
+    current_payments = {}
+    for p in doc.payments:
+        current_payments[p.mode_of_payment] = {
+            "amount": flt(p.amount),
+            "account": p.account,
+        }
+
+    needs_sync = False
+
+    # Check if payments are missing or wrong
+    if len(current_payments) != len(expected_payments):
+        needs_sync = True
+    else:
+        for mode, expected in expected_payments.items():
+            current = current_payments.get(mode)
+            if not current:
+                needs_sync = True
+                break
+            if flt(current["amount"]) != flt(expected["amount"]):
+                needs_sync = True
+                break
+
+    if needs_sync:
+        doc.set("payments", [])
+        for mode, data in expected_payments.items():
+            doc.append("payments", data)
+
+        # Recalculate paid_amount from payments
+        total_paid = sum(flt(p.amount) for p in doc.payments)
+        total_base_paid = sum(flt(p.base_amount) for p in doc.payments)
+        doc.paid_amount = total_paid
+        doc.base_paid_amount = total_base_paid
