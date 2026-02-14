@@ -29,7 +29,7 @@ def get_filter_options():
 
 	item_groups = frappe.db.sql("""
 		SELECT name FROM `tabItem Group`
-		WHERE parent_item_group = 'Beam'
+		WHERE is_group = 0
 		ORDER BY name
 	""", as_list=1)
 	item_groups = [g[0] for g in item_groups]
@@ -39,11 +39,10 @@ def get_filter_options():
 		lengths = frappe.db.sql("""
 			SELECT DISTINCT custom_length
 			FROM `tabItem`
-			WHERE item_group IN %(groups)s
-			AND custom_length IS NOT NULL AND custom_length > 0
+			WHERE custom_length IS NOT NULL AND custom_length > 0
 			AND disabled = 0 AND is_stock_item = 1
 			ORDER BY custom_length
-		""", {"groups": tuple(item_groups)}, as_list=1)
+		""", as_list=1)
 		lengths = [float(l[0]) for l in lengths]
 
 	return {

@@ -92,11 +92,11 @@ class PurchaseRequirementsReport {
 				{ label: __('\u0645\u0646 \u062a\u0627\u0631\u064a\u062e'), fieldname: 'from_date', fieldtype: 'Date', default: me.filters.from_date, reqd: 1 },
 				{ fieldtype: 'Column Break' },
 				{ label: __('\u0625\u0644\u0649 \u062a\u0627\u0631\u064a\u062e'), fieldname: 'to_date', fieldtype: 'Date', default: me.filters.to_date, reqd: 1 },
-				{ fieldtype: 'Section Break', label: '\u0623\u0646\u0648\u0627\u0639 \u0627\u0644\u062c\u0633\u0648\u0631' },
+				{ fieldtype: 'Section Break', label: '\u0627\u0644\u0641\u0644\u0627\u062a\u0631' },
 				{ fieldtype: 'HTML', fieldname: 'item_groups_html' },
-				{ fieldtype: 'Section Break', label: '\u0627\u0644\u0645\u0633\u062a\u0648\u062f\u0639\u0627\u062a' },
+				{ fieldtype: 'Column Break' },
 				{ fieldtype: 'HTML', fieldname: 'warehouses_html' },
-				{ fieldtype: 'Section Break', label: '\u0627\u0644\u0623\u0637\u0648\u0627\u0644' },
+				{ fieldtype: 'Column Break' },
 				{ fieldtype: 'HTML', fieldname: 'lengths_html' }
 			],
 			primary_action_label: '\u0639\u0631\u0636 \u0627\u0644\u062a\u0642\u0631\u064a\u0631',
@@ -129,13 +129,23 @@ class PurchaseRequirementsReport {
 				.modal-body .control-label { font-size: 14px !important; font-weight: 800 !important; color: #1e293b !important; }
 				.modal-body .form-control { height: 44px !important; font-size: 16px !important; font-weight: 700 !important; border: 2px solid #cbd5e1 !important; border-radius: 10px !important; }
 				.modal-body .form-control:focus { border-color: #6366f1 !important; box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2) !important; }
-				.checkbox-grid { padding: 8px 0; }
-				.checkbox-grid .select-all-toggle { display: block; margin-bottom: 10px; font-weight: 900; font-size: 14px; color: #6366f1; cursor: pointer; }
-				.checkbox-grid .select-all-toggle input { margin-left: 6px; width: 18px; height: 18px; accent-color: #6366f1; }
-				.checkbox-grid .checkbox-items { display: flex; flex-wrap: wrap; gap: 8px; }
-				.checkbox-grid .checkbox-item { display: inline-flex; align-items: center; gap: 4px; background: #fff; border: 2px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 800; cursor: pointer; transition: all 0.2s; }
-				.checkbox-grid .checkbox-item:hover { border-color: #6366f1; background: #eef2ff; }
-				.checkbox-grid .checkbox-item input { width: 16px; height: 16px; accent-color: #6366f1; }
+				.filter-dropdown { position: relative; }
+				.filter-dropdown .fd-label { font-size: 13px; font-weight: 900; color: #1e293b; margin-bottom: 4px; }
+				.filter-dropdown .fd-toggle { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 2px solid #cbd5e1; border-radius: 8px; cursor: pointer; background: #fff; font-size: 13px; font-weight: 700; color: #64748b; transition: all 0.2s; }
+				.filter-dropdown .fd-toggle:hover { border-color: #6366f1; }
+				.filter-dropdown .fd-toggle .fd-badge { background: #6366f1; color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 900; margin-right: 6px; }
+				.filter-dropdown .fd-panel { border: 2px solid #e2e8f0; border-radius: 8px; background: #fff; margin-top: 4px; padding: 8px; max-height: 220px; overflow-y: auto; }
+				.filter-dropdown .fd-panel::-webkit-scrollbar { width: 5px; }
+				.filter-dropdown .fd-panel::-webkit-scrollbar-thumb { background: #6366f1; border-radius: 3px; }
+				.filter-dropdown .fd-search { width: 100%; padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 12px; font-weight: 700; margin-bottom: 6px; direction: rtl; }
+				.filter-dropdown .fd-search:focus { border-color: #6366f1; outline: none; }
+				.filter-dropdown .fd-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; padding: 0 2px; }
+				.filter-dropdown .fd-select-all { font-size: 12px; font-weight: 800; color: #6366f1; cursor: pointer; }
+				.filter-dropdown .fd-select-all input { margin-left: 4px; accent-color: #6366f1; }
+				.filter-dropdown .fd-items { display: flex; flex-direction: column; gap: 2px; }
+				.filter-dropdown .fd-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; transition: background 0.15s; }
+				.filter-dropdown .fd-item:hover { background: #eef2ff; }
+				.filter-dropdown .fd-item input { accent-color: #6366f1; min-width: 15px; height: 15px; }
 			</style>
 		`;
 		this.settings_dialog.$wrapper.find('.modal-content').prepend(presetStyles);
@@ -161,7 +171,10 @@ class PurchaseRequirementsReport {
 			callback: (r) => {
 				if (r.message) {
 					this.filter_options = r.message;
-					this.render_item_group_checkboxes(r.message.item_groups);
+					this.render_filter_dropdown(
+						this.settings_dialog.fields_dict.item_groups_html.$wrapper,
+						'\u0645\u062c\u0645\u0648\u0639\u0627\u062a \u0627\u0644\u0623\u0635\u0646\u0627\u0641', r.message.item_groups, 'ig-cb', this.filters.item_groups, true
+					);
 					this.render_length_checkboxes(r.message.lengths);
 					if (this.filters.company) {
 						this.load_warehouses_for_company(this.filters.company);
@@ -183,56 +196,55 @@ class PurchaseRequirementsReport {
 		});
 	}
 
-	render_item_group_checkboxes(groups) {
-		if (!this.settings_dialog) return;
-		let html = '<div class="checkbox-grid">';
-		html += '<label class="select-all-toggle"><input type="checkbox" checked class="select-all-ig"> \u062a\u062d\u062f\u064a\u062f \u0627\u0644\u0643\u0644</label>';
-		html += '<div class="checkbox-items">';
-		groups.forEach(g => {
-			let checked = this.filters.item_groups.length === 0 || this.filters.item_groups.includes(g) ? 'checked' : '';
-			html += `<label class="checkbox-item"><input type="checkbox" ${checked} value="${g}" class="ig-cb"> ${g}</label>`;
+	render_filter_dropdown(container, label, items, cbClass, selectedItems, showSearch) {
+		let me = this;
+		let html = '<div class="filter-dropdown">';
+		html += '<div class="fd-label">' + label + '</div>';
+		html += '<div class="fd-panel">';
+		if (showSearch) {
+			html += '<input type="text" class="fd-search" placeholder="\u0628\u062d\u062b...">';
+		}
+		html += '<div class="fd-actions"><label class="fd-select-all"><input type="checkbox" checked class="fd-sa-' + cbClass + '"> \u0627\u0644\u0643\u0644</label></div>';
+		html += '<div class="fd-items">';
+		items.forEach(item => {
+			let val = typeof item === 'object' ? item.value : item;
+			let display = typeof item === 'object' ? item.display : item;
+			let checked = selectedItems.length === 0 || selectedItems.includes(val) ? 'checked' : '';
+			html += '<label class="fd-item"><input type="checkbox" ' + checked + ' value="' + val + '" class="' + cbClass + '"> ' + display + '</label>';
 		});
-		html += '</div></div>';
-		this.settings_dialog.fields_dict.item_groups_html.$wrapper.html(html);
+		html += '</div></div></div>';
+		container.html(html);
 
-		this.settings_dialog.$wrapper.find('.select-all-ig').off('change').on('change', function() {
-			$(this).closest('.checkbox-grid').find('.ig-cb').prop('checked', $(this).is(':checked'));
+		if (showSearch) {
+			container.find('.fd-search').on('input', function() {
+				let q = $(this).val().toLowerCase();
+				container.find('.fd-item').each(function() {
+					$(this).toggle($(this).text().toLowerCase().indexOf(q) !== -1);
+				});
+			});
+		}
+
+		container.find('.fd-sa-' + cbClass).on('change', function() {
+			container.find('.fd-item:visible .' + cbClass).prop('checked', $(this).is(':checked'));
 		});
 	}
 
 	render_warehouse_checkboxes(warehouses) {
 		if (!this.settings_dialog) return;
-		let html = '<div class="checkbox-grid">';
-		html += '<label class="select-all-toggle"><input type="checkbox" checked class="select-all-wh"> \u062a\u062d\u062f\u064a\u062f \u0627\u0644\u0643\u0644</label>';
-		html += '<div class="checkbox-items">';
-		warehouses.forEach(wh => {
-			let checked = this.filters.warehouses.length === 0 || this.filters.warehouses.includes(wh) ? 'checked' : '';
-			let whShort = wh.replace(/ - \u0645$/, '');
-			html += `<label class="checkbox-item"><input type="checkbox" ${checked} value="${wh}" class="wh-cb"> ${whShort}</label>`;
-		});
-		html += '</div></div>';
-		this.settings_dialog.fields_dict.warehouses_html.$wrapper.html(html);
-
-		this.settings_dialog.$wrapper.find('.select-all-wh').off('change').on('change', function() {
-			$(this).closest('.checkbox-grid').find('.wh-cb').prop('checked', $(this).is(':checked'));
-		});
+		let items = warehouses.map(wh => ({ value: wh, display: wh.replace(/ - \u0645$/, '') }));
+		this.render_filter_dropdown(
+			this.settings_dialog.fields_dict.warehouses_html.$wrapper,
+			'\u0627\u0644\u0645\u0633\u062a\u0648\u062f\u0639\u0627\u062a', items, 'wh-cb', this.filters.warehouses, false
+		);
 	}
 
 	render_length_checkboxes(lengths) {
 		if (!this.settings_dialog) return;
-		let html = '<div class="checkbox-grid">';
-		html += '<label class="select-all-toggle"><input type="checkbox" checked class="select-all-len"> \u062a\u062d\u062f\u064a\u062f \u0627\u0644\u0643\u0644</label>';
-		html += '<div class="checkbox-items">';
-		lengths.forEach(l => {
-			let checked = this.filters.lengths.length === 0 || this.filters.lengths.includes(l) ? 'checked' : '';
-			html += `<label class="checkbox-item"><input type="checkbox" ${checked} value="${l}" class="len-cb"> ${l} \u0645</label>`;
-		});
-		html += '</div></div>';
-		this.settings_dialog.fields_dict.lengths_html.$wrapper.html(html);
-
-		this.settings_dialog.$wrapper.find('.select-all-len').off('change').on('change', function() {
-			$(this).closest('.checkbox-grid').find('.len-cb').prop('checked', $(this).is(':checked'));
-		});
+		let items = lengths.map(l => ({ value: String(l), display: l + ' \u0645' }));
+		this.render_filter_dropdown(
+			this.settings_dialog.fields_dict.lengths_html.$wrapper,
+			'\u0627\u0644\u0623\u0637\u0648\u0627\u0644', items, 'len-cb', this.filters.lengths.map(String), false
+		);
 	}
 
 	collect_dialog_filters() {
